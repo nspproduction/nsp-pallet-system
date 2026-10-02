@@ -1,0 +1,43 @@
+import { z } from "zod";
+import { requireUser } from "@/lib/auth/current-user";
+import { fail, ok, readJson } from "@/lib/http/respond";
+import { adjustStock } from "@/lib/services/request";
+import { prisma } from "@/lib/prisma";
+
+const Body = z.object({
+  palletTypeId: z.string(),
+  condition: z.enum(["USABLE", "IN_REPAIR", "UNUSABLE"]),
+  fromDepartmentId: z.string().optional().nullable(),
+  toDepartmentId: z.string().optional().nullable(),
+  quantity: z.coerce.number().int().positive(),
+  reason: z.string().min(1).max(500),
+});
+
+export async function GET() {
+  try {
+    await requireUser();
+    const list = await prisma.stockMovement.findMany({
+      where: { reason: { startsWith: "[ADJUST]" } },
+      include: {
+        palletType: { select: { code: true, name: true } },
+        fromDepartment: { select: { code: true, name: true } },
+        toDepartment: { select: { code: true, name: true } },
+      },
+      orderBy: { occurredAt: "desc" },
+      take: 100,
+    });
+    return ok(list);
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function POST(req: Request) {
+  try {
+    const user = await requireUser();
+    const body = Body.parse(await readJson(req));
+    return ok(await adjustStock(user, body));
+  } catch (e) {
+    return fail(e);
+  }
+}
