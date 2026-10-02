@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 
 export default function AdminLoginPage() {
@@ -13,7 +13,6 @@ export default function AdminLoginPage() {
 }
 
 function LoginForm() {
-  const router = useRouter();
   const params = useSearchParams();
   const errorParam = params.get("error");
 
@@ -41,11 +40,12 @@ function LoginForm() {
         throw new Error(data.error ?? "เข้าสู่ระบบไม่สำเร็จ");
       }
       const next = params.get("next") || "/admin";
-      router.replace(next);
-      router.refresh();
+      // Full-page navigation ensures the new session cookie is applied
+      // and the server re-renders /admin cleanly — avoids React #441 from
+      // suspending during a synchronous client-side transition.
+      window.location.assign(next);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "เข้าสู่ระบบไม่สำเร็จ");
-    } finally {
       setBusy(false);
     }
   }
