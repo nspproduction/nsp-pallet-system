@@ -75,7 +75,7 @@ export default function Page() {
   const [mode, setMode] = useState<Mode>("ISSUE_OUT");
   const [sectionOverride, setSectionOverride] = useState<string>("");
   const [returnCondition, setReturnCondition] = useState<Condition>("USABLE");
-  const [neededDate, setNeededDate] = useState("");
+  const [neededDate, setNeededDate] = useState(() => new Date().toLocaleDateString("sv-SE"));
   const [purpose, setPurpose] = useState("");
   const [items, setItems] = useState<Item[]>([{ palletTypeId: "", quantity: 1 }]);
   const [files, setFiles] = useState<File[]>([]);
@@ -218,6 +218,30 @@ export default function Page() {
   const role = me?.user?.role;
   const canCreate = role === "REQUESTER" || role === "ADMIN";
 
+  const effectiveCondition: Condition = mode === "RETURN_IN" ? returnCondition : "USABLE";
+  const deptMissing = mode !== "RECEIVE_NEW" && !dept;
+  const validItems = items.filter((it) => it.palletTypeId && it.quantity > 0);
+  const hasPartialItem = items.some((it) => (!it.palletTypeId && it.quantity > 0) || (it.palletTypeId && it.quantity <= 0));
+  const overBalance =
+    mode === "ISSUE_OUT" &&
+    validItems.some((it) => {
+      const key = `${it.palletTypeId}::${effectiveCondition}`;
+      return it.quantity > (warehouseBalance[key] ?? 0);
+    });
+
+  const validationHint = deptMissing
+    ? "บัญชีของคุณยังไม่ได้ผูกกับแผนก"
+    : validItems.length === 0
+      ? "กรุณาเพิ่มรายการพาเลทอย่างน้อย 1 รายการ"
+      : hasPartialItem
+        ? "กรุณากรอกชนิดพาเลทและจำนวนให้ครบทุกรายการ"
+        : overBalance
+          ? "มีรายการที่จำนวนเกินยอดคงเหลือในคลัง"
+          : !neededDate
+            ? "กรุณาเลือกวันที่ต้องการ"
+            : null;
+  const canSubmit = !busy && validationHint === null;
+
   if (loading) {
     return (
       <div>
@@ -300,13 +324,16 @@ export default function Page() {
 
         {uploadStatus && <p className="rounded-lg bg-brand-50 p-3 text-xs text-brand-700">{uploadStatus}</p>}
         {err && <p className="rounded-lg bg-rose-50 p-3 text-xs text-rose-700">{err}</p>}
+        {!canSubmit && validationHint && (
+          <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800">{validationHint}</p>
+        )}
       </div>
 
       <div className="fixed bottom-0 left-1/2 z-20 w-full max-w-md -translate-x-1/2 border-t border-border bg-white p-4">
         <button
           onClick={submit}
-          disabled={busy}
-          className="h-12 w-full rounded-xl bg-brand-600 text-sm font-semibold text-white shadow-sm shadow-brand-600/30 disabled:opacity-50"
+          disabled={!canSubmit}
+          className="h-12 w-full rounded-xl bg-brand-600 text-sm font-semibold text-white shadow-sm shadow-brand-600/30 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {busy ? (uploadStatus ?? "กำลังส่ง...") : "ส่งคำขอ"}
         </button>
@@ -582,27 +609,13 @@ function AttachmentPicker({ files, onChange }: { files: File[]; onChange: (next:
         </p>
         <div className="flex items-center gap-3">
           {files.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setPreviewIndex(0)}
-              className="text-xs font-semibold text-slate-700 hover:text-slate-900"
-            >
+            <button type="button" onClick={() => setPreviewIndex(0)} className="text-xs font-semibold text-slate-700 hover:text-slate-900">
               ดูรูป ({files.length})
             </button>
           )}
-          <label
-            className={`text-xs font-semibold ${atMax ? "cursor-not-allowed text-slate-300" : "cursor-pointer text-brand-700"}`}
-          >
+          <label className={`text-xs font-semibold ${atMax ? "cursor-not-allowed text-slate-300" : "cursor-pointer text-brand-700"}`}>
             + เพิ่มรูป
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              capture="environment"
-              disabled={atMax}
-              onChange={onPick}
-              className="hidden"
-            />
+            <input type="file" accept="image/*" multiple capture="environment" disabled={atMax} onChange={onPick} className="hidden" />
           </label>
         </div>
       </div>
@@ -618,12 +631,7 @@ function AttachmentPicker({ files, onChange }: { files: File[]; onChange: (next:
           {files.map((f, i) => (
             <li key={i} className="relative aspect-square overflow-hidden rounded-lg bg-slate-100">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={previews[i]}
-                alt={f.name}
-                onClick={() => setPreviewIndex(i)}
-                className="h-full w-full cursor-zoom-in object-cover"
-              />
+              <img src={previews[i]} alt={f.name} onClick={() => setPreviewIndex(i)} className="h-full w-full cursor-zoom-in object-cover" />
               <button
                 type="button"
                 onClick={() => removeAt(i)}

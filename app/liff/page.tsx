@@ -72,7 +72,7 @@ export default function LiffHome() {
           const res = await fetch("/api/auth/line", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ idToken }),
+            body: JSON.stringify({ idToken })
           });
           if (!res.ok) {
             console.warn("[liff] /api/auth/line responded", res.status, await res.text());
@@ -97,12 +97,12 @@ export default function LiffHome() {
           setError({
             step: err.step,
             message: err.message,
-            raw: err.cause instanceof Error ? err.cause.message : undefined,
+            raw: err.cause instanceof Error ? err.cause.message : undefined
           });
         } else {
           setError({
             step: "unknown",
-            message: err instanceof Error ? err.message : String(err),
+            message: err instanceof Error ? err.message : String(err)
           });
         }
         setStatus("error");
@@ -114,7 +114,7 @@ export default function LiffHome() {
         needsRegistration?: boolean;
         user?: { id: string; fullName: string; role: string; status: string };
       },
-      line: { displayName: string; pictureUrl?: string } | null,
+      line: { displayName: string; pictureUrl?: string } | null
     ) {
       if (!me.user) return;
       // Prefer LINE displayName + pictureUrl for presentation. Fall back to DB fullName
@@ -123,7 +123,7 @@ export default function LiffHome() {
         userId: me.user.id,
         displayName: line?.displayName || me.user.fullName,
         pictureUrl: line?.pictureUrl,
-        role: me.user.role,
+        role: me.user.role
       });
       if (me.needsRegistration) {
         router.replace("/liff/register");
@@ -181,12 +181,8 @@ export default function LiffHome() {
       <CenteredMessage>
         <div className="grid h-14 w-14 place-items-center rounded-full bg-amber-100 text-amber-700">⏳</div>
         <p className="mt-4 text-base font-semibold text-slate-900">กำลังรอการอนุมัติการลงทะเบียน</p>
-        <p className="mt-2 max-w-xs text-xs leading-relaxed text-slate-600">
-          แอดมินจะตรวจสอบและเปิดการใช้งานให้คุณ กรุณากลับมาเปิดอีกครั้งภายหลัง
-        </p>
-        {profile?.displayName && (
-          <p className="mt-3 text-xs text-slate-500">{profile.displayName}</p>
-        )}
+        <p className="mt-2 max-w-xs text-xs leading-relaxed text-slate-600">แอดมินจะตรวจสอบและเปิดการใช้งานให้คุณ กรุณากลับมาเปิดอีกครั้งภายหลัง</p>
+        {profile?.displayName && <p className="mt-3 text-xs text-slate-500">{profile.displayName}</p>}
       </CenteredMessage>
     );
   }
@@ -196,12 +192,8 @@ export default function LiffHome() {
       <CenteredMessage>
         <div className="grid h-14 w-14 place-items-center rounded-full bg-rose-100 text-rose-600">🚫</div>
         <p className="mt-4 text-base font-semibold text-slate-900">บัญชีของคุณถูกระงับชั่วคราว</p>
-        <p className="mt-2 max-w-xs text-xs leading-relaxed text-slate-600">
-          หากคิดว่าเกิดจากความผิดพลาด กรุณาติดต่อแอดมิน
-        </p>
-        {profile?.displayName && (
-          <p className="mt-3 text-xs text-slate-500">{profile.displayName}</p>
-        )}
+        <p className="mt-2 max-w-xs text-xs leading-relaxed text-slate-600">หากคิดว่าเกิดจากความผิดพลาด กรุณาติดต่อแอดมิน</p>
+        {profile?.displayName && <p className="mt-3 text-xs text-slate-500">{profile.displayName}</p>}
       </CenteredMessage>
     );
   }
@@ -287,22 +279,16 @@ export default function LiffHome() {
       {/* Menu */}
       <section className="flex flex-col gap-3 px-4 py-6">
         <SectionTitle>เมนูหลัก</SectionTitle>
-        {canCreate && (
-          <MenuItem href="/liff/requests" icon={<InboxIcon />} title="คำขอของฉัน" subtitle="ดูสถานะและประวัติ" />
-        )}
+        {canCreate && <MenuItem href="/liff/requests" icon={<InboxIcon />} title="คำขอของฉัน" subtitle="ดูสถานะและประวัติ" />}
         {canApprove && (
           <>
             <MenuItem href="/liff/approvals" icon={<CheckIcon />} title="รออนุมัติ" subtitle="คำขอที่รอฉันตัดสินใจ" />
             <MenuItem href="/liff/approvals/history" icon={<HistoryIcon />} title="ประวัติอนุมัติ" subtitle="คำขอที่ฉันเคยตัดสินใจแล้ว" />
+            <MenuItem href="/liff/warehouse-ops" icon={<WrenchIcon />} title="จัดการคลังพาเลท" subtitle="ซ่อม · ตัดจำหน่าย" />
             <MenuItem href="/liff/balance" icon={<BoxIcon />} title="ยอดสต็อก" subtitle="ยอดคงเหลือในคลัง" />
           </>
         )}
       </section>
-
-      {/* Footer */}
-      <div className="mt-auto px-4 pb-6 text-center">
-        <p className="text-[11px] text-slate-400">Noritake Pallet Dispatch · v0.1</p>
-      </div>
     </div>
   );
 }
@@ -391,6 +377,13 @@ function BoxIcon() {
       <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
       <path d="M3.27 6.96L12 12.01l8.73-5.05" />
       <path d="M12 22.08V12" />
+    </Icon>
+  );
+}
+function WrenchIcon() {
+  return (
+    <Icon>
+      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
     </Icon>
   );
 }

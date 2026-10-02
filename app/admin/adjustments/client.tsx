@@ -20,6 +20,12 @@ export function AdjustmentsClient({
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [fromId, setFromId] = useState<string>("");
+  const [toId, setToId] = useState<string>("");
+  const [quantity, setQuantity] = useState<string>("");
+  const [reason, setReason] = useState<string>("");
+
+  const canSubmit = !busy && (fromId || toId) && Number(quantity) > 0 && reason.trim().length > 0;
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -29,10 +35,10 @@ export function AdjustmentsClient({
     const body = {
       palletTypeId: String(fd.get("palletTypeId")),
       condition: String(fd.get("condition")),
-      fromDepartmentId: String(fd.get("fromDepartmentId") || "") || null,
-      toDepartmentId: String(fd.get("toDepartmentId") || "") || null,
-      quantity: Number(fd.get("quantity")),
-      reason: String(fd.get("reason")).trim(),
+      fromDepartmentId: fromId || null,
+      toDepartmentId: toId || null,
+      quantity: Number(quantity),
+      reason: reason.trim(),
     };
     const res = await fetch("/api/adjustments", {
       method: "POST",
@@ -46,6 +52,10 @@ export function AdjustmentsClient({
       return;
     }
     setOpen(false);
+    setFromId("");
+    setToId("");
+    setQuantity("");
+    setReason("");
     router.refresh();
   }
 
@@ -82,14 +92,22 @@ export function AdjustmentsClient({
               <div className="grid grid-cols-2 gap-3">
                 <label className="block">
                   <span className="text-xs font-medium text-slate-600">จาก (ออก)</span>
-                  <select name="fromDepartmentId" className={`mt-1 ${inputCls}`}>
+                  <select
+                    value={fromId}
+                    onChange={(e) => setFromId(e.target.value)}
+                    className={`mt-1 ${inputCls}`}
+                  >
                     <option value="">-</option>
                     {departments.map((d) => <option key={d.id} value={d.id}>{d.code} · {d.name}</option>)}
                   </select>
                 </label>
                 <label className="block">
                   <span className="text-xs font-medium text-slate-600">ไป (เข้า)</span>
-                  <select name="toDepartmentId" className={`mt-1 ${inputCls}`}>
+                  <select
+                    value={toId}
+                    onChange={(e) => setToId(e.target.value)}
+                    className={`mt-1 ${inputCls}`}
+                  >
                     <option value="">-</option>
                     {departments.map((d) => <option key={d.id} value={d.id}>{d.code} · {d.name}</option>)}
                   </select>
@@ -97,19 +115,38 @@ export function AdjustmentsClient({
               </div>
               <label className="block">
                 <span className="text-xs font-medium text-slate-600">จำนวน</span>
-                <input name="quantity" type="number" min={1} required className={`mt-1 ${inputCls}`} />
+                <input
+                  type="number"
+                  min={1}
+                  required
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
+                  className={`mt-1 ${inputCls}`}
+                />
               </label>
               <label className="block">
                 <span className="text-xs font-medium text-slate-600">เหตุผล</span>
-                <textarea name="reason" required rows={2} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" />
+                <textarea
+                  required
+                  rows={2}
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                />
               </label>
               <p className="text-xs text-slate-500">
                 * ระบุ "จาก" ถ้าต้องการลดสต็อก, ระบุ "ไป" ถ้าต้องการเพิ่มสต็อก, ระบุทั้งคู่คือย้ายระหว่างแผนก
               </p>
+              {!fromId && !toId && (
+                <p className="text-xs text-amber-700">กรุณาระบุ "จาก" หรือ "ไป" อย่างน้อย 1 อย่าง</p>
+              )}
               {err && <p className="text-xs text-rose-600">{err}</p>}
               <div className="flex justify-end gap-2 pt-2">
                 <button type="button" onClick={() => setOpen(false)} className="h-9 rounded-lg border border-slate-200 px-4 text-sm">ยกเลิก</button>
-                <button disabled={busy} className="h-9 rounded-lg bg-brand-600 px-4 text-sm font-medium text-white disabled:opacity-50">
+                <button
+                  disabled={!canSubmit}
+                  className="h-9 rounded-lg bg-brand-600 px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
                   {busy ? "กำลังบันทึก..." : "บันทึก"}
                 </button>
               </div>

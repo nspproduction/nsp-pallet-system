@@ -54,7 +54,7 @@ export function AuthPanel({ devMode }: { devMode: boolean }) {
       const res = await fetch("/api/auth/dev-login", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ employeeCode }),
+        body: JSON.stringify({ employeeCode })
       });
       if (!res.ok) {
         const data = await res.json();
@@ -89,9 +89,7 @@ export function AuthPanel({ devMode }: { devMode: boolean }) {
   if (me.authenticated && me.user) {
     return (
       <div className="flex flex-wrap items-center gap-3 rounded-xl border border-brand-200 bg-brand-50/60 px-4 py-3 text-sm">
-        <span className="grid h-8 w-8 place-items-center rounded-full bg-brand-600 text-white font-semibold">
-          {me.user.fullName[0]}
-        </span>
+        <span className="grid h-8 w-8 place-items-center rounded-full bg-brand-600 text-white font-semibold">{me.user.fullName[0]}</span>
         <div className="min-w-0 flex-1">
           <p className="font-medium text-slate-900">{me.user.fullName}</p>
           <p className="text-xs text-slate-500">
@@ -112,12 +110,8 @@ export function AuthPanel({ devMode }: { devMode: boolean }) {
 
   return (
     <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4 text-sm">
-      <p className="text-xs font-semibold uppercase tracking-widest text-amber-700">
-        DEV login (localhost เท่านั้น)
-      </p>
-      <p className="mt-1 text-xs text-slate-600">
-        เลือกผู้ใช้ตัวอย่างจาก seed เพื่อทดสอบระบบ (บน prod ใช้ LINE login ผ่าน /liff)
-      </p>
+      <p className="text-xs font-semibold uppercase tracking-widest text-amber-700">DEV login (localhost เท่านั้น)</p>
+      <p className="mt-1 text-xs text-slate-600">เลือกผู้ใช้ตัวอย่างจาก seed เพื่อทดสอบระบบ (บน prod ใช้ LINE login ผ่าน /liff)</p>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <select
           value={employeeCode}
@@ -130,8 +124,7 @@ export function AuthPanel({ devMode }: { devMode: boolean }) {
           ) : (
             devUsers.map((u) => (
               <option key={u.employeeCode} value={u.employeeCode}>
-                {u.employeeCode} · {u.fullName} ({u.role}
-                {u.department ? ` · ${u.department.code}` : ""})
+                {u.fullName}-{u.department ? ` · ${u.department.code}` : ""} [{u.role}]
               </option>
             ))
           )}

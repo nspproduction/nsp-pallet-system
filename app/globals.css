@@ -16,8 +16,7 @@
   --color-success: #16a34a;
   --color-warning: #f59e0b;
   --color-danger: #e11d48;
-  --font-sans: var(--font-sans), "Noto Sans Thai", ui-sans-serif, system-ui,
-    -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-sans: var(--font-sans), "Noto Sans Thai", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
@@ -72,8 +71,7 @@ h4 {
 
 /* Subtle grid background utility */
 .bg-grid {
-  background-image: linear-gradient(to right, #e2e8f0 1px, transparent 1px),
-    linear-gradient(to bottom, #e2e8f0 1px, transparent 1px);
+  background-image: linear-gradient(to right, #e2e8f0 1px, transparent 1px), linear-gradient(to bottom, #e2e8f0 1px, transparent 1px);
   background-size: 32px 32px;
   mask-image: radial-gradient(ellipse at center, black 40%, transparent 75%);
 }

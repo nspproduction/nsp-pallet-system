@@ -69,11 +69,7 @@ export default function Page() {
           + สร้างคำขอใหม่
         </Link>
 
-        {error && (
-          <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">
-            {error}
-          </div>
-        )}
+        {error && <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">{error}</div>}
 
         {list.length === 0 ? (
           <LiffEmpty title="ยังไม่มีคำขอ" subtitle={error ? "" : "กดปุ่มด้านบนเพื่อสร้างคำขอแรก"} />

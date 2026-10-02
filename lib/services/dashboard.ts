@@ -98,10 +98,14 @@ export async function getOutstandingByDepartment() {
     select: { id: true },
   });
 
-  const departments = await prisma.department.findMany({
-    where: { active: true, id: warehouse?.id ? { not: warehouse.id } : undefined },
-    orderBy: { code: "asc" },
-  });
+  const [departments, palletTypes] = await Promise.all([
+    prisma.department.findMany({
+      where: { active: true, id: warehouse?.id ? { not: warehouse.id } : undefined },
+      orderBy: { code: "asc" },
+    }),
+    prisma.palletType.findMany({ select: { id: true, code: true, name: true } }),
+  ]);
+  const ptMap = new Map(palletTypes.map((p) => [p.id, p]));
 
   const results = await Promise.all(
     departments.map(async (dept) => {
@@ -126,7 +130,12 @@ export async function getOutstandingByDepartment() {
       const rows = Array.from(bal.entries())
         .map(([k, qty]) => {
           const [palletTypeId, condition] = k.split("::");
-          return { palletTypeId, condition, quantity: qty };
+          return {
+            palletTypeId,
+            palletType: ptMap.get(palletTypeId) ?? null,
+            condition,
+            quantity: qty,
+          };
         })
         .filter((r) => r.quantity !== 0);
       const total = rows.reduce((s, r) => s + r.quantity, 0);
