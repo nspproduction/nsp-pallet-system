@@ -3,20 +3,15 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { LiffTopBar, LiffEmpty, StatusPill, TYPE_LABEL } from "../../_shared";
+import { LiffTopBar, LiffEmpty, RequestCard } from "../../_shared";
+import type { RequestCardData } from "../../_shared";
 import { Skeleton } from "@/app/_components/ui";
 import { safeFetchJson } from "../../_fetch";
 
-interface Req {
-  id: string;
-  docNo: string;
-  type: string;
-  status: string;
+type Req = RequestCardData & {
   requester: { fullName: string };
-  fromDepartment?: { name: string } | null;
-  toDepartment?: { name: string } | null;
   approvals: { id: string; decision: string; comment: string | null; decidedAt: string }[];
-}
+};
 
 export default function Page() {
   const router = useRouter();
@@ -65,41 +60,33 @@ export default function Page() {
             {list.map((r) => {
               const myDecision = r.approvals[0];
               return (
-                <li
-                  key={r.id}
-                  className="rounded-2xl border border-border bg-white p-4 transition active:scale-[0.99] active:bg-slate-50"
-                  onClick={() => router.push(`/liff/requests/${r.id}`)}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="font-mono text-xs text-slate-500">{r.docNo}</p>
-                      <p className="mt-0.5 text-sm font-semibold text-slate-900">
-                        {TYPE_LABEL[r.type] ?? r.type}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500">โดย {r.requester.fullName}</p>
-                    </div>
-                    <StatusPill status={r.status} />
-                  </div>
-                  <p className="mt-2 text-xs text-slate-500">
-                    {r.fromDepartment?.name ?? "-"} → {r.toDepartment?.name ?? "-"}
-                  </p>
-                  {myDecision && (
-                    <div className="mt-3 flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
-                      <span
-                        className={`text-xs font-semibold ${
-                          myDecision.decision === "APPROVED" ? "text-emerald-700" : "text-rose-700"
-                        }`}
-                      >
-                        {myDecision.decision === "APPROVED" ? "อนุมัติ" : "ปฏิเสธ"}
-                      </span>
-                      <span className="text-[11px] text-slate-500">
-                        {new Date(myDecision.decidedAt).toLocaleString("th-TH")}
-                      </span>
-                    </div>
-                  )}
-                  {myDecision?.comment && (
-                    <p className="mt-2 text-xs text-slate-600">{myDecision.comment}</p>
-                  )}
+                <li key={r.id}>
+                  <RequestCard
+                    r={r}
+                    onClick={() => router.push(`/liff/requests/${r.id}`)}
+                    trailing={
+                      <>
+                        <p className="mt-2 text-[11px] text-slate-500">โดย {r.requester.fullName}</p>
+                        {myDecision && (
+                          <div className="mt-3 flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+                            <span
+                              className={`text-xs font-semibold ${
+                                myDecision.decision === "APPROVED" ? "text-emerald-700" : "text-rose-700"
+                              }`}
+                            >
+                              {myDecision.decision === "APPROVED" ? "อนุมัติ" : "ปฏิเสธ"}
+                            </span>
+                            <span className="text-[11px] text-slate-500">
+                              {new Date(myDecision.decidedAt).toLocaleString("th-TH")}
+                            </span>
+                          </div>
+                        )}
+                        {myDecision?.comment && (
+                          <p className="mt-2 text-xs text-slate-600">{myDecision.comment}</p>
+                        )}
+                      </>
+                    }
+                  />
                 </li>
               );
             })}

@@ -275,6 +275,7 @@ export default function Page() {
             sections={sections}
             selectedSectionId={sectionOverride}
             onSectionChange={setSectionOverride}
+            lockedSection={defaultSection}
             action={mode === "ISSUE_OUT" ? "เบิกออก" : "คืนเข้า"}
           />
         )}
@@ -352,12 +353,14 @@ function RequesterBanner({
   sections,
   selectedSectionId,
   onSectionChange,
+  lockedSection,
   action
 }: {
   dept: { id: string; code: string; name: string } | null;
   sections: Section[];
   selectedSectionId: string;
   onSectionChange: (v: string) => void;
+  lockedSection: Section | null;
   action: string;
 }) {
   if (!dept) {
@@ -372,18 +375,25 @@ function RequesterBanner({
       <p className="text-[11px] font-medium uppercase tracking-wider text-slate-400">{action}ในนาม</p>
       <p className="mt-1 text-base font-semibold text-slate-900">{dept.name}</p>
 
-      {sections.length > 0 && (
-        <label className="mt-3 block">
-          <span className="text-xs font-medium text-slate-600">Section</span>
-          <select value={selectedSectionId} onChange={(e) => onSectionChange(e.target.value)} className={twMerge(INPUT_BASE, "mt-1")}>
-            <option value="">- ไม่ระบุ -</option>
-            {sections.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </label>
+      {lockedSection ? (
+        <div className="mt-3">
+          <p className="text-xs font-medium text-slate-600">Section</p>
+          <p className="mt-1 text-sm text-slate-900">{lockedSection.name}</p>
+        </div>
+      ) : (
+        sections.length > 0 && (
+          <label className="mt-3 block">
+            <span className="text-xs font-medium text-slate-600">Section</span>
+            <select value={selectedSectionId} onChange={(e) => onSectionChange(e.target.value)} className={twMerge(INPUT_BASE, "mt-1")}>
+              <option value="">- ไม่ระบุ -</option>
+              {sections.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )
       )}
     </div>
   );

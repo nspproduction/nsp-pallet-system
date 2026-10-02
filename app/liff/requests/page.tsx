@@ -5,19 +5,11 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 
 // Components
-import { LiffTopBar, LiffEmpty, StatusPill, TYPE_LABEL } from "../_shared";
+import { LiffTopBar, LiffEmpty, RequestCard } from "../_shared";
+import type { RequestCardData } from "../_shared";
 import { Skeleton } from "@/app/_components/ui";
 
-interface Req {
-  id: string;
-  docNo: string;
-  type: string;
-  status: string;
-  createdAt: string;
-  items: { id: string; palletType: { name: string }; quantity: number }[];
-  fromDepartment?: { name: string } | null;
-  toDepartment?: { name: string } | null;
-}
+type Req = RequestCardData;
 
 export default function Page() {
   const [list, setList] = useState<Req[] | null>(null);
@@ -89,25 +81,8 @@ export default function Page() {
           <ul className="space-y-3">
             {list.map((r) => (
               <li key={r.id}>
-                <Link
-                  href={`/liff/requests/${r.id}`}
-                  className="block rounded-2xl border border-border bg-white p-4 active:bg-slate-50"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="min-w-0">
-                      <p className="font-mono text-xs text-slate-500">{r.docNo}</p>
-                      <p className="mt-0.5 text-sm font-semibold text-slate-900">
-                        {TYPE_LABEL[r.type] ?? r.type}
-                      </p>
-                    </div>
-                    <StatusPill status={r.status} />
-                  </div>
-                  <p className="mt-2 text-xs text-slate-500">
-                    {r.fromDepartment?.name ?? "-"} → {r.toDepartment?.name ?? "-"}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    {r.items.length} รายการ · {new Date(r.createdAt).toLocaleDateString("th-TH")}
-                  </p>
+                <Link href={`/liff/requests/${r.id}`} className="block">
+                  <RequestCard r={r} />
                 </Link>
               </li>
             ))}

@@ -63,8 +63,8 @@ export function StatusPill({ status }: { status: string }) {
 
 export const TYPE_LABEL: Record<string, string> = {
   RECEIVE_NEW: "รับเข้าใหม่",
-  ISSUE_INTERNAL: "เบิกใช้ภายใน",
-  RETURN_INTERNAL: "คืนจากภายใน",
+  ISSUE_INTERNAL: "เบิกออก",
+  RETURN_INTERNAL: "คืนเข้า",
   SHIP_CUSTOMER: "ส่งลูกค้า",
   RETURN_CUSTOMER: "รับคืนจากลูกค้า",
   SEND_REPAIR: "ส่งซ่อม",
@@ -72,3 +72,86 @@ export const TYPE_LABEL: Record<string, string> = {
   WRITE_OFF: "ตัดจำหน่าย",
   ADJUSTMENT: "ปรับยอด",
 };
+
+export const CONDITION_LABEL: Record<string, string> = {
+  USABLE: "ดี",
+  IN_REPAIR: "ส่งซ่อม",
+  UNUSABLE: "เสีย",
+};
+
+export interface RequestCardItem {
+  id: string;
+  palletType: { name: string };
+  condition: string;
+  quantity: number;
+}
+
+export interface RequestCardData {
+  id: string;
+  docNo: string;
+  type: string;
+  status: string;
+  createdAt: string;
+  fromDepartment?: { name: string } | null;
+  toDepartment?: { name: string } | null;
+  items: RequestCardItem[];
+}
+
+export function RequestCard({
+  r,
+  trailing,
+  onClick,
+}: {
+  r: RequestCardData;
+  trailing?: React.ReactNode;
+  onClick?: () => void;
+}) {
+  const content = (
+    <>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-mono text-xs text-slate-500">{r.docNo}</p>
+          <p className="mt-0.5 text-sm font-semibold text-slate-900">
+            {TYPE_LABEL[r.type] ?? r.type}
+          </p>
+        </div>
+        <StatusPill status={r.status} />
+      </div>
+      <p className="mt-2 text-xs text-slate-500">
+        {r.fromDepartment?.name ?? "-"} → {r.toDepartment?.name ?? "-"}
+      </p>
+      <p className="mt-0.5 text-[11px] text-slate-400">
+        {new Date(r.createdAt).toLocaleDateString("th-TH")}
+      </p>
+      {r.items.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {r.items.map((it) => (
+            <li
+              key={it.id}
+              className="flex items-center justify-between rounded bg-slate-50 px-2 py-1 text-xs"
+            >
+              <span className="truncate text-slate-800">{it.palletType.name}</span>
+              <span className="ml-2 flex shrink-0 items-center gap-2">
+                <span className="font-mono text-slate-900">× {it.quantity}</span>
+                <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-slate-500">
+                  {CONDITION_LABEL[it.condition] ?? it.condition}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {trailing}
+    </>
+  );
+
+  const base = "block w-full rounded-2xl border border-border bg-white p-4 text-left transition active:scale-[0.99] active:bg-slate-50";
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className={base}>
+        {content}
+      </button>
+    );
+  }
+  return <div className={base}>{content}</div>;
+}

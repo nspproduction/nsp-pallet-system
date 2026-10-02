@@ -5,22 +5,14 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 // Components
-import { LiffTopBar, LiffEmpty, TYPE_LABEL } from "../_shared";
+import { LiffTopBar, LiffEmpty, RequestCard } from "../_shared";
+import type { RequestCardData } from "../_shared";
 import { Skeleton } from "@/app/_components/ui";
 
 // Lib
 import { safeFetchJson } from "../_fetch";
 
-interface Req {
-  id: string;
-  docNo: string;
-  type: string;
-  status: string;
-  requester: { fullName: string };
-  fromDepartment?: { name: string } | null;
-  toDepartment?: { name: string } | null;
-  items: { id: string; palletType: { name: string }; quantity: number }[];
-}
+type Req = RequestCardData & { requester: { fullName: string } };
 
 export default function Page() {
   const router = useRouter();
@@ -99,33 +91,14 @@ export default function Page() {
         ) : (
           <ul className="space-y-3">
             {list.map((r) => (
-              <li key={r.id} className="rounded-2xl border border-border bg-white p-4">
-                <div className="flex items-start justify-between">
-                  <div className="min-w-0">
-                    <p className="font-mono text-xs text-slate-500">{r.docNo}</p>
-                    <p className="mt-0.5 text-sm font-semibold text-slate-900">{TYPE_LABEL[r.type] ?? r.type}</p>
-                    <p className="mt-1 text-xs text-slate-500">โดย {r.requester.fullName}</p>
-                  </div>
-                  <button
-                    onClick={() => router.push(`/liff/requests/${r.id}`)}
-                    className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700"
-                  >
-                    ดู
-                  </button>
-                </div>
-                <p className="mt-2 text-xs text-slate-500">
-                  {r.fromDepartment?.name ?? "-"} → {r.toDepartment?.name ?? "-"}
-                </p>
-                <ul className="mt-2 space-y-1">
-                  {r.items.map((it) => (
-                    <li key={it.id} className="rounded bg-slate-50 px-2 py-1 text-xs text-slate-700">
-                      {it.palletType.name} × {it.quantity}
-                    </li>
-                  ))}
-                </ul>
+              <li key={r.id} className="space-y-2">
+                <RequestCard
+                  r={r}
+                  trailing={<p className="mt-2 text-[11px] text-slate-500">โดย {r.requester.fullName}</p>}
+                />
 
                 {openId === r.id ? (
-                  <div className="mt-3 space-y-2">
+                  <div className="space-y-2 rounded-2xl border border-border bg-white p-3">
                     <textarea
                       placeholder="ความคิดเห็น (บังคับสำหรับปฏิเสธ)"
                       value={comment}
@@ -157,12 +130,21 @@ export default function Page() {
                     </div>
                   </div>
                 ) : (
-                  <button
-                    onClick={() => setOpenId(r.id)}
-                    className="mt-3 h-9 w-full rounded-lg bg-brand-600 text-xs font-medium text-white"
-                  >
-                    ตัดสินใจ
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/liff/requests/${r.id}`)}
+                      className="h-9 flex-1 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-700"
+                    >
+                      ดูรายละเอียด
+                    </button>
+                    <button
+                      onClick={() => setOpenId(r.id)}
+                      className="h-9 flex-1 rounded-lg bg-brand-600 text-xs font-medium text-white"
+                    >
+                      ตัดสินใจ
+                    </button>
+                  </div>
                 )}
               </li>
             ))}
