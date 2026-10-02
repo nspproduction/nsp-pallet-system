@@ -8,6 +8,7 @@ import { twMerge } from "tailwind-merge";
 // Components
 import { LiffTopBar } from "../../_shared";
 import { Skeleton } from "@/app/_components/ui";
+import { ImageViewer } from "@/app/_components/image-viewer";
 
 // Lib
 import { safeFetchJson } from "../../_fetch";
@@ -246,9 +247,7 @@ export default function Page() {
         <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
           <div className="grid h-16 w-16 place-items-center rounded-full bg-rose-100 text-2xl text-rose-500">🚫</div>
           <p className="mt-4 text-sm font-semibold text-slate-800">บทบาทของคุณไม่สามารถสร้างคำขอได้</p>
-          <p className="mt-1 max-w-xs text-xs text-slate-500">
-            เฉพาะผู้ขอเบิก (Requester) และ Admin เท่านั้นที่สร้างคำขอได้
-          </p>
+          <p className="mt-1 max-w-xs text-xs text-slate-500">เฉพาะผู้ขอเบิก (Requester) และ Admin เท่านั้นที่สร้างคำขอได้</p>
           <button
             onClick={() => router.push("/liff")}
             className="mt-6 h-10 rounded-full bg-brand-600 px-6 text-sm font-medium text-white shadow-sm shadow-brand-600/30"
@@ -395,9 +394,6 @@ function ReceiveNewBanner() {
     <div className="rounded-2xl border border-brand-200 bg-brand-50/60 p-4">
       <p className="text-[11px] font-medium uppercase tracking-wider text-brand-700">รับเข้าใหม่</p>
       <p className="mt-1 text-sm font-semibold text-brand-900">รับพาเลทเข้าคลัง</p>
-      <p className="mt-1 text-xs text-brand-800/80">
-        พาเลทที่รับเข้ามาจะถูกบันทึกเข้าคลังด้วยสภาพ "ดี" (USABLE)
-      </p>
     </div>
   );
 }
@@ -523,29 +519,85 @@ function QuantityStepper({ value, onChange }: { value: number; onChange: (q: num
   );
 }
 
+const MAX_ATTACHMENTS = 5;
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB
+
 function AttachmentPicker({ files, onChange }: { files: File[]; onChange: (next: File[]) => void }) {
+  const [warn, setWarn] = useState<string | null>(null);
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const [previews, setPreviews] = useState<string[]>([]);
+
+  useEffect(() => {
+    const urls = files.map((f) => URL.createObjectURL(f));
+    setPreviews(urls);
+    return () => urls.forEach((u) => URL.revokeObjectURL(u));
+  }, [files]);
+
   function onPick(e: React.ChangeEvent<HTMLInputElement>) {
     const picked = Array.from(e.target.files ?? []);
-    if (picked.length === 0) return;
-    onChange([...files, ...picked]);
     e.target.value = "";
+    if (picked.length === 0) return;
+
+    const errors: string[] = [];
+    const accepted: File[] = [];
+    const remaining = MAX_ATTACHMENTS - files.length;
+    for (const f of picked) {
+      if (!f.type.startsWith("image/")) {
+        errors.push(`${f.name}: ต้องเป็นไฟล์รูป`);
+        continue;
+      }
+      if (f.size > MAX_ATTACHMENT_BYTES) {
+        errors.push(`${f.name}: ขนาดเกิน 10 MB`);
+        continue;
+      }
+      if (accepted.length < remaining) accepted.push(f);
+    }
+    const over = picked.length - accepted.length - errors.length;
+    if (over > 0) errors.push(`แนบได้สูงสุด ${MAX_ATTACHMENTS} รูป`);
+    setWarn(errors.length ? errors.join(" · ") : null);
+    if (accepted.length) onChange([...files, ...accepted]);
   }
 
   function removeAt(i: number) {
     onChange(files.filter((_, idx) => idx !== i));
   }
 
+  const atMax = files.length >= MAX_ATTACHMENTS;
+
   return (
     <div className="rounded-2xl border border-border bg-white p-4">
       <div className="flex items-center justify-between">
         <p className="text-xs font-medium text-slate-600">
-          แนบรูป <span className="text-slate-400">(ไม่บังคับ)</span>
+          แนบรูป <span className="text-slate-400">(สูงสุด {MAX_ATTACHMENTS} รูป, ไม่เกิน 10 MB)</span>
         </p>
-        <label className="cursor-pointer text-xs font-semibold text-brand-700">
-          + เพิ่มรูป
-          <input type="file" accept="image/*" multiple capture="environment" onChange={onPick} className="hidden" />
-        </label>
+        <div className="flex items-center gap-3">
+          {files.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setPreviewIndex(0)}
+              className="text-xs font-semibold text-slate-700 hover:text-slate-900"
+            >
+              ดูรูป ({files.length})
+            </button>
+          )}
+          <label
+            className={`text-xs font-semibold ${atMax ? "cursor-not-allowed text-slate-300" : "cursor-pointer text-brand-700"}`}
+          >
+            + เพิ่มรูป
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              capture="environment"
+              disabled={atMax}
+              onChange={onPick}
+              className="hidden"
+            />
+          </label>
+        </div>
       </div>
+
+      {warn && <p className="mt-2 rounded bg-amber-50 px-2 py-1 text-[11px] text-amber-800">{warn}</p>}
 
       {files.length === 0 ? (
         <p className="mt-3 rounded-lg border border-dashed border-slate-200 bg-slate-50/50 p-4 text-center text-xs text-slate-400">
@@ -556,7 +608,12 @@ function AttachmentPicker({ files, onChange }: { files: File[]; onChange: (next:
           {files.map((f, i) => (
             <li key={i} className="relative aspect-square overflow-hidden rounded-lg bg-slate-100">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={URL.createObjectURL(f)} alt={f.name} className="h-full w-full object-cover" />
+              <img
+                src={previews[i]}
+                alt={f.name}
+                onClick={() => setPreviewIndex(i)}
+                className="h-full w-full cursor-zoom-in object-cover"
+              />
               <button
                 type="button"
                 onClick={() => removeAt(i)}
@@ -568,6 +625,14 @@ function AttachmentPicker({ files, onChange }: { files: File[]; onChange: (next:
             </li>
           ))}
         </ul>
+      )}
+
+      {previewIndex !== null && previews.length > 0 && (
+        <ImageViewer
+          images={previews.map((src, i) => ({ src, name: files[i]?.name }))}
+          startIndex={previewIndex}
+          onClose={() => setPreviewIndex(null)}
+        />
       )}
     </div>
   );

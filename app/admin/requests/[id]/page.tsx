@@ -3,6 +3,7 @@ import { getRequestDetail } from "@/lib/services/request";
 import { notFound } from "next/navigation";
 import { PageHeader, Card, StatusBadge } from "@/app/_components/ui";
 import { RequestActions } from "./actions";
+import { AttachmentGallery } from "./attachment-gallery";
 
 export const dynamic = "force-dynamic";
 
@@ -117,14 +118,10 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
 
           {r.attachments.length > 0 && (
             <Card>
-              <h3 className="text-base font-semibold text-slate-900">ไฟล์แนบ</h3>
-              <ul className="mt-3 space-y-2 text-sm">
-                {r.attachments.map((a) => (
-                  <li key={a.id} className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600 font-mono truncate">
-                    {a.filePath.split("/").pop()}
-                  </li>
-                ))}
-              </ul>
+              <h3 className="text-base font-semibold text-slate-900">รูปแนบ ({r.attachments.length})</h3>
+              <AttachmentGallery
+                attachments={r.attachments.map((a) => ({ id: a.id, filePath: a.filePath }))}
+              />
             </Card>
           )}
         </div>

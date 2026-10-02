@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { HttpError } from "@/lib/auth/current-user";
 
 const BUCKET = "attachments";
+const MAX_ATTACHMENTS_PER_REQUEST = 5;
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB
 
 function svc() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -38,6 +40,22 @@ export async function registerAttachment(params: {
 }) {
   const req = await prisma.request.findUnique({ where: { id: params.requestId } });
   if (!req) throw new HttpError(404, "request ไม่พบ");
+  if (req.requesterId !== params.userId) {
+    throw new HttpError(403, "แนบไฟล์ได้เฉพาะคำขอของตัวเอง");
+  }
+  if (req.status !== "PENDING") {
+    throw new HttpError(400, "แนบไฟล์ได้เฉพาะคำขอที่ยังรออนุมัติ");
+  }
+  if (params.fileType && !params.fileType.startsWith("image/")) {
+    throw new HttpError(400, "รับเฉพาะไฟล์รูปภาพ");
+  }
+  if (params.fileSize && params.fileSize > MAX_ATTACHMENT_BYTES) {
+    throw new HttpError(400, "ไฟล์ขนาดเกิน 10 MB");
+  }
+  const existing = await prisma.attachment.count({ where: { requestId: params.requestId } });
+  if (existing >= MAX_ATTACHMENTS_PER_REQUEST) {
+    throw new HttpError(400, `แนบรูปได้สูงสุด ${MAX_ATTACHMENTS_PER_REQUEST} รูป`);
+  }
   return prisma.attachment.create({
     data: {
       requestId: params.requestId,

@@ -13,15 +13,21 @@ import { safeFetchJson } from "../_fetch";
 interface Row {
   palletTypeId: string;
   condition: string;
-  locationId: string;
+  departmentId: string;
   quantity: number;
   palletType: { id: string; code: string; name: string } | null;
-  location: { id: string; code: string; name: string; type: string } | null;
+  department: { id: string; code: string; name: string } | null;
 }
+
+const CONDITION_LABEL: Record<string, string> = {
+  USABLE: "ดี",
+  IN_REPAIR: "ส่งซ่อม",
+  UNUSABLE: "เสีย",
+};
 
 export default function Page() {
   const [rows, setRows] = useState<Row[] | null>(null);
-  const [locFilter, setLocFilter] = useState<string>("all");
+  const [deptFilter, setDeptFilter] = useState<string>("all");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -70,18 +76,19 @@ export default function Page() {
 
   const grouped = new Map<string, Row[]>();
   for (const r of rows) {
-    if (locFilter !== "all" && r.location?.type !== locFilter) continue;
-    const k = r.location?.id ?? "unknown";
+    if (deptFilter !== "all" && r.departmentId !== deptFilter) continue;
+    const k = r.department?.id ?? "unknown";
     grouped.set(k, [...(grouped.get(k) ?? []), r]);
   }
 
-  const TYPES = [
-    { v: "all", l: "ทั้งหมด" },
-    { v: "WAREHOUSE", l: "คลัง" },
-    { v: "INTERNAL_AREA", l: "ไลน์" },
-    { v: "CUSTOMER", l: "ลูกค้า" },
-    { v: "REPAIR_SHOP", l: "ร้านซ่อม" },
-  ];
+  const deptChips = Array.from(
+    new Map(
+      rows
+        .filter((r) => r.department)
+        .map((r) => [r.department!.id, r.department!]),
+    ).values(),
+  ).sort((a, b) => a.code.localeCompare(b.code));
+  const FILTERS = [{ v: "all", l: "ทั้งหมด" }, ...deptChips.map((d) => ({ v: d.id, l: d.name }))];
 
   return (
     <div>
@@ -94,12 +101,12 @@ export default function Page() {
         )}
 
         <div className="mb-4 flex gap-2 overflow-x-auto">
-          {TYPES.map((t) => (
+          {FILTERS.map((t) => (
             <button
               key={t.v}
-              onClick={() => setLocFilter(t.v)}
+              onClick={() => setDeptFilter(t.v)}
               className={`shrink-0 rounded-full px-3 py-1 text-xs ${
-                locFilter === t.v ? "bg-brand-600 text-white" : "border border-slate-200 bg-white text-slate-700"
+                deptFilter === t.v ? "bg-brand-600 text-white" : "border border-slate-200 bg-white text-slate-700"
               }`}
             >
               {t.l}
@@ -111,12 +118,12 @@ export default function Page() {
           <LiffEmpty title="ไม่มีข้อมูล" />
         ) : (
           <div className="space-y-4">
-            {Array.from(grouped.entries()).map(([locId, list]) => (
-              <div key={locId} className="rounded-2xl border border-border bg-white p-4">
+            {Array.from(grouped.entries()).map(([deptId, list]) => (
+              <div key={deptId} className="rounded-2xl border border-border bg-white p-4">
                 <div className="flex items-start justify-between">
                   <div>
-                    <p className="text-[10px] text-slate-400">{list[0]?.location?.type}</p>
-                    <p className="text-sm font-semibold text-slate-900">{list[0]?.location?.name ?? "-"}</p>
+                    <p className="text-[10px] text-slate-400">{list[0]?.department?.code}</p>
+                    <p className="text-sm font-semibold text-slate-900">{list[0]?.department?.name ?? "-"}</p>
                   </div>
                   <span className="rounded-full bg-brand-100 px-2 py-0.5 text-xs font-semibold text-brand-700">
                     {list.reduce((s, r) => s + r.quantity, 0)}
@@ -127,7 +134,7 @@ export default function Page() {
                     <li key={i} className="flex items-center justify-between py-2">
                       <div className="min-w-0">
                         <p className="text-sm text-slate-800">{r.palletType?.name ?? "-"}</p>
-                        <p className="text-[10px] text-slate-500">{r.condition}</p>
+                        <p className="text-[10px] text-slate-500">{CONDITION_LABEL[r.condition] ?? r.condition}</p>
                       </div>
                       <span className="font-mono text-sm text-slate-900">{r.quantity}</span>
                     </li>

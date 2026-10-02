@@ -2,11 +2,11 @@
 
 // Library
 import { useEffect, useState, use } from "react";
-import { useRouter } from "next/navigation";
 
 // Components
 import { LiffTopBar, StatusPill, TYPE_LABEL } from "../../_shared";
 import { Skeleton } from "@/app/_components/ui";
+import { ImageViewer, useAttachmentUrls } from "@/app/_components/image-viewer";
 
 interface ReqDetail {
   id: string;
@@ -32,11 +32,11 @@ interface Me { authenticated: boolean; user?: { id: string; role: string } }
 
 export default function Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const router = useRouter();
   const [r, setR] = useState<ReqDetail | null>(null);
   const [me, setMe] = useState<Me | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
 
   useEffect(() => {
     load();
@@ -60,34 +60,6 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
       return;
     }
     load();
-  }
-
-  async function uploadFile(file: File) {
-    setBusy(true);
-    setErr(null);
-    try {
-      const urlRes = await fetch("/api/attachments/upload-url", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ requestId: id, filename: file.name }),
-      });
-      if (!urlRes.ok) throw new Error("get upload url failed");
-      const { path, signedUrl } = await urlRes.json();
-
-      const putRes = await fetch(signedUrl, { method: "PUT", body: file, headers: { "content-type": file.type } });
-      if (!putRes.ok) throw new Error("upload failed");
-
-      await fetch("/api/attachments", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ requestId: id, path, fileType: file.type, fileSize: file.size }),
-      });
-      await load();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "อัปโหลดไม่สำเร็จ");
-    } finally {
-      setBusy(false);
-    }
   }
 
   if (!r) {
@@ -194,24 +166,10 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
           </div>
         )}
 
-        <div className="rounded-2xl border border-border bg-white p-4">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold text-slate-900">รูปแนบ ({r.attachments.length})</p>
-            <label className="cursor-pointer rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-              + แนบไฟล์
-              <input type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => e.target.files?.[0] && uploadFile(e.target.files[0])} />
-            </label>
-          </div>
-          {r.attachments.length > 0 && (
-            <ul className="mt-3 space-y-1">
-              {r.attachments.map((a) => (
-                <li key={a.id} className="truncate rounded bg-slate-50 px-2 py-1 text-xs font-mono text-slate-600">
-                  {a.filePath.split("/").pop()}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        <AttachmentsBlock
+          attachments={r.attachments}
+          onOpen={(i) => setPreviewIndex(i)}
+        />
 
         {err && <p className="rounded-lg bg-rose-50 p-3 text-xs text-rose-700">{err}</p>}
       </div>
@@ -227,6 +185,88 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
           </button>
         </div>
       )}
+
+      {previewIndex !== null && r.attachments.length > 0 && (
+        <AttachmentViewer attachments={r.attachments} startIndex={previewIndex} onClose={() => setPreviewIndex(null)} />
+      )}
     </div>
   );
+}
+
+function AttachmentsBlock({
+  attachments,
+  onOpen,
+}: {
+  attachments: { id: string; filePath: string }[];
+  onOpen: (index: number) => void;
+}) {
+  if (attachments.length === 0) {
+    return (
+      <div className="rounded-2xl border border-border bg-white p-4">
+        <p className="text-sm font-semibold text-slate-900">รูปแนบ</p>
+        <p className="mt-2 text-xs text-slate-400">ไม่มีรูปแนบ</p>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-2xl border border-border bg-white p-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-semibold text-slate-900">รูปแนบ ({attachments.length})</p>
+        <button
+          type="button"
+          onClick={() => onOpen(0)}
+          className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-200"
+        >
+          ดูรูป
+        </button>
+      </div>
+      <AttachmentThumbs attachments={attachments} onOpen={onOpen} />
+    </div>
+  );
+}
+
+function AttachmentThumbs({
+  attachments,
+  onOpen,
+}: {
+  attachments: { id: string; filePath: string }[];
+  onOpen: (index: number) => void;
+}) {
+  const urls = useAttachmentUrls(attachments.map((a) => a.id));
+  return (
+    <ul className="mt-3 grid grid-cols-3 gap-2">
+      {attachments.map((a, i) => (
+        <li key={a.id} className="aspect-square overflow-hidden rounded-lg bg-slate-100">
+          {urls[a.id] ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={urls[a.id]}
+              alt={a.filePath.split("/").pop() ?? ""}
+              onClick={() => onOpen(i)}
+              className="h-full w-full cursor-zoom-in object-cover"
+            />
+          ) : (
+            <div className="h-full w-full animate-pulse bg-slate-200" />
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function AttachmentViewer({
+  attachments,
+  startIndex,
+  onClose,
+}: {
+  attachments: { id: string; filePath: string }[];
+  startIndex: number;
+  onClose: () => void;
+}) {
+  const urls = useAttachmentUrls(attachments.map((a) => a.id));
+  const images = attachments
+    .map((a) => ({ src: urls[a.id], name: a.filePath.split("/").pop() }))
+    .filter((img) => img.src);
+  if (images.length === 0) return null;
+  return <ImageViewer images={images} startIndex={startIndex} onClose={onClose} />;
 }
