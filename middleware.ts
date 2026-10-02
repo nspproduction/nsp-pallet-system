@@ -8,11 +8,11 @@ export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const hasCookie = Boolean(req.cookies.get(SESSION_COOKIE_NAME)?.value);
 
-  // Admin area requires a session.
+  // Admin area requires a session. Redirect to the admin login page.
   if (pathname.startsWith("/admin") && !hasCookie) {
     const url = req.nextUrl.clone();
-    url.pathname = "/";
-    url.searchParams.set("reason", "auth_required");
+    url.pathname = "/login";
+    url.searchParams.set("next", pathname);
     return NextResponse.redirect(url);
   }
 

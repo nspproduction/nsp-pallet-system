@@ -80,6 +80,7 @@ model User {
   phone          String?
   role           UserRole     @default(REQUESTER)
   status         UserStatus   @default(PENDING)
+  passwordHash   String?      // only set for ADMIN users who log in via username/password
   departmentId   String?
   sectionId      String?
   createdAt      DateTime     @default(now())
