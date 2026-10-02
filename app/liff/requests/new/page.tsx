@@ -7,6 +7,7 @@ import { twMerge } from "tailwind-merge";
 
 // Components
 import { LiffTopBar } from "../../_shared";
+import { Skeleton } from "@/app/_components/ui";
 
 // Lib
 import { safeFetchJson } from "../../_fetch";
@@ -80,6 +81,7 @@ export default function Page() {
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     void (async () => {
@@ -99,6 +101,7 @@ export default function Page() {
         }
         setWarehouseBalance(map);
       }
+      setLoading(false);
     })();
   }, []);
 
@@ -211,6 +214,52 @@ export default function Page() {
     router.push(`/liff/requests/${created.id}`);
   }
 
+  const role = me?.user?.role;
+  const canCreate = role === "REQUESTER" || role === "ADMIN";
+
+  if (loading) {
+    return (
+      <div>
+        <LiffTopBar title="สร้างคำขอ" />
+        <div className="space-y-5 p-4 pb-32">
+          <Skeleton className="h-12 w-full rounded-xl" />
+          <Skeleton className="h-24 w-full rounded-2xl" />
+          <div className="space-y-3 rounded-2xl border border-border bg-white p-4">
+            <Skeleton className="h-3 w-20" />
+            <Skeleton className="h-11 w-full rounded-lg" />
+            <Skeleton className="h-11 w-full rounded-lg" />
+          </div>
+          <div className="space-y-3 rounded-2xl border border-border bg-white p-4">
+            <Skeleton className="h-3 w-16" />
+            <Skeleton className="h-11 w-full rounded-lg" />
+            <Skeleton className="h-11 w-full rounded-lg" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (me && !canCreate) {
+    return (
+      <div>
+        <LiffTopBar title="สร้างคำขอ" />
+        <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
+          <div className="grid h-16 w-16 place-items-center rounded-full bg-rose-100 text-2xl text-rose-500">🚫</div>
+          <p className="mt-4 text-sm font-semibold text-slate-800">บทบาทของคุณไม่สามารถสร้างคำขอได้</p>
+          <p className="mt-1 max-w-xs text-xs text-slate-500">
+            เฉพาะผู้ขอเบิก (Requester) และ Admin เท่านั้นที่สร้างคำขอได้
+          </p>
+          <button
+            onClick={() => router.push("/liff")}
+            className="mt-6 h-10 rounded-full bg-brand-600 px-6 text-sm font-medium text-white shadow-sm shadow-brand-600/30"
+          >
+            กลับหน้าหลัก
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <LiffTopBar title="สร้างคำขอ" />
@@ -219,6 +268,8 @@ export default function Page() {
 
         {mode === "RECEIVE_NEW" ? (
           <ReceiveNewBanner />
+        ) : me === null ? (
+          <div className="h-20 animate-pulse rounded-2xl border border-border bg-slate-50" />
         ) : (
           <RequesterBanner
             dept={dept}

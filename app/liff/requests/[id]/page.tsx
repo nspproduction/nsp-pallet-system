@@ -23,7 +23,7 @@ interface ReqDetail {
   fromSection: { name: string } | null;
   toDepartment: { name: string } | null;
   toSection: { name: string } | null;
-  items: { id: string; palletType: { name: string }; condition: string; quantity: number; actualQuantity: number | null }[];
+  items: { id: string; palletType: { name: string }; condition: string; quantity: number }[];
   approvals: { id: string; decision: string; comment: string | null; decidedAt: string; approver: { fullName: string } }[];
   attachments: { id: string; filePath: string }[];
 }
@@ -93,7 +93,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   if (!r) {
     return (
       <div>
-        <LiffTopBar title="คำขอ" backHref="/liff/requests" />
+        <LiffTopBar title="คำขอ" />
         <div className="space-y-4 p-4">
           <div className="space-y-3 rounded-2xl border border-border bg-white p-4">
             <div className="flex items-center justify-between">
@@ -120,7 +120,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
   return (
     <div>
-      <LiffTopBar title={r.docNo} backHref="/liff/requests" />
+      <LiffTopBar title={r.docNo} />
       <div className="space-y-4 p-4 pb-32">
         <div className="flex items-center justify-between rounded-2xl bg-gradient-to-br from-brand-600 to-brand-900 p-4 text-white">
           <div>
@@ -167,12 +167,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
                   <p className="text-[11px] text-slate-500">{it.condition}</p>
                 </div>
                 <div className="text-right">
-                  <p className="font-mono text-sm text-slate-900">
-                    {it.actualQuantity ?? it.quantity}
-                    {it.actualQuantity !== null && it.actualQuantity !== it.quantity && (
-                      <span className="ml-1 text-xs text-amber-700">(ขอ {it.quantity})</span>
-                    )}
-                  </p>
+                  <p className="font-mono text-sm text-slate-900">{it.quantity}</p>
                 </div>
               </li>
             ))}

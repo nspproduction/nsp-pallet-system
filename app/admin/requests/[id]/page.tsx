@@ -68,8 +68,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
                 <tr className="text-left text-[11px] font-semibold uppercase text-slate-500">
                   <th className="pb-2">ชนิด</th>
                   <th>สถานะ</th>
-                  <th className="text-right">ขอ</th>
-                  <th className="text-right">จริง</th>
+                  <th className="text-right">จำนวน</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -78,15 +77,6 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
                     <td className="py-2 font-medium text-slate-900">{it.palletType.name}</td>
                     <td className="py-2 text-xs text-slate-500">{it.condition}</td>
                     <td className="py-2 text-right font-mono text-slate-700">{it.quantity}</td>
-                    <td className="py-2 text-right font-mono">
-                      {it.actualQuantity !== null ? (
-                        <span className={it.actualQuantity === it.quantity ? "text-emerald-700" : "text-amber-700"}>
-                          {it.actualQuantity}
-                        </span>
-                      ) : (
-                        <span className="text-slate-400">-</span>
-                      )}
-                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -104,15 +94,6 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
                   label={a.decision === "APPROVED" ? "อนุมัติ" : "ปฏิเสธ"}
                   by={a.approver.fullName}
                   comment={a.comment ?? undefined}
-                />
-              ))}
-              {r.storeActions.map((s) => (
-                <TL
-                  key={s.id}
-                  when={s.actedAt}
-                  label={s.action === "CONFIRM_DISPATCH" ? "ยืนยันจ่ายของ" : "ยืนยันรับของ"}
-                  by={s.user.fullName}
-                  comment={s.comment ?? undefined}
                 />
               ))}
               {r.cancelledAt && <TL when={r.cancelledAt} label="ยกเลิก" by={r.requester.fullName} />}

@@ -62,7 +62,7 @@ export default async function AdminDashboard() {
         <StatCard label="พาเลทในคลัง (ใช้งานได้)" value={s.warehouseUsable} tone="brand" />
         <StatCard label="ค้างนอกคลัง" value={s.outstandingOutside} tone="warning" />
         <StatCard label="รออนุมัติ" value={s.pendingRequests} tone="slate" />
-        <StatCard label="อนุมัติแล้ว รอส่งมอบ" value={s.approvedAwaitingFulfill} tone="brand" />
+        <StatCard label="อนุมัติแล้ว" value={s.approvedRequests} tone="brand" />
         <StatCard label="รอซ่อม (ในคลัง)" value={s.inRepair} tone="warning" />
         <StatCard label="ตัดจำหน่าย (30 วัน)" value={s.writeOffLast30d} tone="rose" />
         <StatCard label="ประเภทคำขอ PENDING" value={s.pendingByType.length} tone="slate" />

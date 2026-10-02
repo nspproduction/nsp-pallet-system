@@ -23,7 +23,6 @@ datasource db {
 enum UserRole {
   REQUESTER
   APPROVER
-  STORE
   ADMIN
   VIEWER
 }
@@ -91,7 +90,6 @@ model User {
   requests       Request[]    @relation("RequesterRequests")
   approvals      Approval[]
   auditLogs      AuditLog[]
-  storeActions   StoreAction[]
 
   @@index([role, status])
   @@map("users")
@@ -144,8 +142,7 @@ enum RequestType {
 enum RequestStatus {
   DRAFT           // ร่าง
   PENDING         // รออนุมัติ
-  APPROVED        // อนุมัติแล้ว รอส่งมอบ/รับของ
-  FULFILLED       // ยืนยันส่งมอบ/รับของจริงแล้ว (stock เปลี่ยนตอนนี้)
+  APPROVED        // อนุมัติแล้ว (stock เปลี่ยนตอนนี้)
   REJECTED
   CANCELLED
 }
@@ -183,12 +180,10 @@ model Request {
   updatedAt       DateTime       @updatedAt
   submittedAt     DateTime?
   approvedAt      DateTime?
-  fulfilledAt     DateTime?
   cancelledAt     DateTime?
 
   items           RequestItem[]
   approvals       Approval[]
-  storeActions    StoreAction[]
   movements       StockMovement[]
   attachments     Attachment[]
 
@@ -208,7 +203,6 @@ model RequestItem {
 
   condition      PalletCondition
   quantity       Int
-  actualQuantity Int?            // ยอดจริงตอนยืนยันส่งมอบ (ไว้เทียบกับ quantity)
   note           String?
 
   @@index([requestId])
@@ -235,25 +229,6 @@ enum ApprovalDecision {
   REJECTED
 }
 
-model StoreAction {
-  id           String       @id @default(cuid())
-  requestId    String
-  request      Request      @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  userId       String       // พนักงานคลังที่กดยืนยัน
-  user         User         @relation(fields: [userId], references: [id])
-  action       StoreActionType
-  comment      String?
-  actedAt      DateTime     @default(now())
-
-  @@index([requestId])
-  @@map("store_actions")
-}
-
-enum StoreActionType {
-  CONFIRM_DISPATCH   // ยืนยันจ่ายของออก
-  CONFIRM_RECEIPT    // ยืนยันรับของเข้า
-}
-
 // =========================================================
 // Stock ledger (source of truth)
 // =========================================================
@@ -264,7 +239,7 @@ enum StoreActionType {
 // Sign convention: quantity is positive; direction is expressed via from/to locations.
 // - fromLocation only  => stock leaves that location (write-off / lost)
 // - toLocation only    => stock enters (new receive from supplier)
-// - both               => transfer (approved & fulfilled request)
+// - both               => transfer (approved request)
 //
 // Condition changes (e.g. USABLE -> IN_REPAIR at the same warehouse) are modeled
 // as TWO rows sharing the same movementGroupId: an out-row and an in-row

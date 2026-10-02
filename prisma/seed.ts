@@ -32,7 +32,6 @@ async function main() {
   const users = [
     { employeeCode: "EMP-ADMIN",   fullName: "Admin",                      role: "ADMIN"     as const, status: "ACTIVE" as const, departmentId: whPl?.id ?? null },
     { employeeCode: "EMP-APR-01",  fullName: "หัวหน้าคลังพาเลท ทดสอบ",      role: "APPROVER"  as const, status: "ACTIVE" as const, departmentId: whPl?.id ?? null },
-    { employeeCode: "EMP-STR-01",  fullName: "พนักงานคลังพาเลท ทดสอบ",      role: "STORE"     as const, status: "ACTIVE" as const, departmentId: whPl?.id ?? null },
     { employeeCode: "EMP-WH-01",   fullName: "พนักงานพัสดุ ทดสอบ",          role: "REQUESTER" as const, status: "ACTIVE" as const, departmentId: wh?.id   ?? null },
     { employeeCode: "EMP-PD-01",   fullName: "พนักงานผลิต ทดสอบ",           role: "REQUESTER" as const, status: "ACTIVE" as const, departmentId: pd?.id   ?? null },
     { employeeCode: "EMP-DISP-01", fullName: "พนักงานจ่ายสินค้า ทดสอบ",     role: "REQUESTER" as const, status: "ACTIVE" as const, departmentId: disp?.id ?? null },

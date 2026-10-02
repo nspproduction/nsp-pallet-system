@@ -3,12 +3,23 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
-export function LiffTopBar({ title, backHref = "/liff" }: { title: string; backHref?: string }) {
+export function LiffTopBar({ title, backHref }: { title: string; backHref?: string }) {
   const router = useRouter();
+  function onBack() {
+    if (backHref) {
+      router.push(backHref);
+      return;
+    }
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push("/liff");
+    }
+  }
   return (
     <div className="sticky top-0 z-10 flex h-14 items-center gap-3 border-b border-border bg-white/95 px-4 backdrop-blur">
       <button
-        onClick={() => router.push(backHref)}
+        onClick={onBack}
         aria-label="กลับ"
         className="grid h-9 w-9 place-items-center rounded-full text-slate-600 hover:bg-slate-100"
       >
@@ -37,8 +48,7 @@ export function LiffEmpty({ title, subtitle, cta }: { title: string; subtitle?: 
 const STATUS_TONES: Record<string, string> = {
   DRAFT: "bg-slate-100 text-slate-700",
   PENDING: "bg-amber-100 text-amber-800",
-  APPROVED: "bg-brand-100 text-brand-800",
-  FULFILLED: "bg-emerald-100 text-emerald-800",
+  APPROVED: "bg-emerald-100 text-emerald-800",
   REJECTED: "bg-rose-100 text-rose-800",
   CANCELLED: "bg-slate-200 text-slate-600",
 };

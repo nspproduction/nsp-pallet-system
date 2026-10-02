@@ -17,7 +17,7 @@ const TYPE_LABEL: Record<string, string> = {
   ADJUSTMENT: "ปรับยอด",
 };
 
-const STATUSES = ["PENDING", "APPROVED", "FULFILLED", "REJECTED", "CANCELLED"] as const;
+const STATUSES = ["PENDING", "APPROVED", "REJECTED", "CANCELLED"] as const;
 type Status = typeof STATUSES[number];
 
 function isStatus(s: unknown): s is Status {

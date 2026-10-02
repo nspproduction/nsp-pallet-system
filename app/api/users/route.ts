@@ -12,7 +12,7 @@ export async function GET(req: Request) {
     const list = await prisma.user.findMany({
       where: {
         status: z.enum(["PENDING", "ACTIVE", "DISABLED"]).optional().parse(status ?? undefined),
-        role: z.enum(["REQUESTER", "APPROVER", "STORE", "ADMIN", "VIEWER"]).optional().parse(role ?? undefined),
+        role: z.enum(["REQUESTER", "APPROVER", "ADMIN", "VIEWER"]).optional().parse(role ?? undefined),
       },
       include: { department: true },
       orderBy: [{ status: "asc" }, { fullName: "asc" }],

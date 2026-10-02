@@ -19,7 +19,7 @@ interface Department { id: string; code: string; name: string; }
 interface Section { id: string; code: string; name: string; active: boolean; }
 
 const inputCls = "w-full h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm focus:border-brand-500 focus:outline-none";
-const ROLES = ["REQUESTER", "APPROVER", "STORE", "ADMIN", "VIEWER"];
+const ROLES = ["REQUESTER", "APPROVER", "ADMIN", "VIEWER"];
 const STATUSES = ["PENDING", "ACTIVE", "DISABLED"];
 
 export function UserEdit({ initial, departments }: { initial: User; departments: Department[] }) {

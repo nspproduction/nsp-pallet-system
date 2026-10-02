@@ -91,7 +91,7 @@ export async function getAvailableBalance(params: {
         condition: params.condition,
         request: {
           fromDepartmentId: params.departmentId,
-          status: { in: ["PENDING", "APPROVED"] },
+          status: "PENDING",
           type: { in: [...CONSUMES_FROM] },
         },
       },
@@ -302,25 +302,48 @@ export async function cancelRequest(user: SessionUser, requestId: string, reason
 
 export async function approveRequest(user: SessionUser, requestId: string, comment?: string) {
   if (!["APPROVER", "ADMIN"].includes(user.role)) throw new HttpError(403, "ต้องมีสิทธิ์ผู้อนุมัติ");
-  const r = await prisma.request.findUnique({ where: { id: requestId } });
+  const r = await prisma.request.findUnique({
+    where: { id: requestId },
+    include: { items: true },
+  });
   if (!r) throw new HttpError(404, "request ไม่พบ");
   if (r.status !== "PENDING") throw new HttpError(400, "อนุมัติได้เฉพาะคำขอสถานะ PENDING");
   if (r.requesterId === user.id) throw new HttpError(400, "ผู้ร้องขอกับผู้อนุมัติต้องไม่ใช่คนเดียวกัน");
 
-  const [updated] = await prisma.$transaction([
-    prisma.request.update({
-      where: { id: requestId },
-      data: { status: "APPROVED", approvedAt: new Date() },
-    }),
-    prisma.approval.create({
+  const now = new Date();
+  const updated = await prisma.$transaction(async (tx) => {
+    await tx.approval.create({
       data: {
         requestId,
         approverId: user.id,
         decision: "APPROVED",
         comment: comment ?? null,
       },
-    }),
-  ]);
+    });
+
+    for (const it of r.items) {
+      await tx.stockMovement.create({
+        data: {
+          requestId: r.id,
+          palletTypeId: it.palletTypeId,
+          condition: it.condition,
+          quantity: it.quantity,
+          fromDepartmentId: r.fromDepartmentId ?? null,
+          fromSectionId: r.fromSectionId ?? null,
+          toDepartmentId: r.toDepartmentId ?? null,
+          toSectionId: r.toSectionId ?? null,
+          occurredAt: now,
+          reason: `Request ${r.docNo}`,
+        },
+      });
+    }
+
+    return tx.request.update({
+      where: { id: requestId },
+      data: { status: "APPROVED", approvedAt: now },
+    });
+  });
+
   await writeAudit({
     userId: user.id,
     entity: "request",
@@ -361,95 +384,6 @@ export async function rejectRequest(user: SessionUser, requestId: string, commen
     after: { comment },
   });
   return updated;
-}
-
-// -----------------------------------------------------------------------------
-// Fulfill (Store confirms) → generate stock_movements
-// -----------------------------------------------------------------------------
-
-export async function fulfillRequest(
-  user: SessionUser,
-  requestId: string,
-  actuals: { requestItemId: string; actualQuantity: number }[],
-  storeComment?: string,
-) {
-  if (!["STORE", "ADMIN"].includes(user.role)) throw new HttpError(403, "ต้องมีสิทธิ์พนักงานคลัง");
-  const r = await prisma.request.findUnique({
-    where: { id: requestId },
-    include: { items: true },
-  });
-  if (!r) throw new HttpError(404, "request ไม่พบ");
-  if (r.status !== "APPROVED") throw new HttpError(400, "ยืนยันจ่ายได้เฉพาะคำขอที่ APPROVED");
-  if (r.requesterId === user.id) throw new HttpError(400, "ผู้ร้องขอยืนยันเองไม่ได้");
-
-  const actualsById = new Map(actuals.map((a) => [a.requestItemId, a.actualQuantity]));
-  for (const it of r.items) {
-    const q = actualsById.get(it.id) ?? it.quantity;
-    if (q < 0) throw new HttpError(400, "actualQuantity ต้อง ≥ 0");
-  }
-
-  await prisma.$transaction(async (tx) => {
-    // Update items with actualQuantity
-    for (const it of r.items) {
-      const q = actualsById.get(it.id) ?? it.quantity;
-      await tx.requestItem.update({
-        where: { id: it.id },
-        data: { actualQuantity: q },
-      });
-    }
-
-    // Generate stock movements
-    for (const it of r.items) {
-      const q = actualsById.get(it.id) ?? it.quantity;
-      if (q === 0) continue;
-      await tx.stockMovement.create({
-        data: {
-          requestId: r.id,
-          palletTypeId: it.palletTypeId,
-          condition: it.condition,
-          quantity: q,
-          fromDepartmentId: r.fromDepartmentId ?? null,
-          fromSectionId: r.fromSectionId ?? null,
-          toDepartmentId: r.toDepartmentId ?? null,
-          toSectionId: r.toSectionId ?? null,
-          occurredAt: new Date(),
-          reason: `Request ${r.docNo}`,
-        },
-      });
-    }
-
-    // Close request
-    await tx.request.update({
-      where: { id: r.id },
-      data: { status: "FULFILLED", fulfilledAt: new Date() },
-    });
-
-    // Store action record
-    await tx.storeAction.create({
-      data: {
-        requestId: r.id,
-        userId: user.id,
-        action:
-          r.type === "RECEIVE_NEW" || r.type === "RETURN_INTERNAL"
-            ? "CONFIRM_RECEIPT"
-            : "CONFIRM_DISPATCH",
-        comment: storeComment ?? null,
-      },
-    });
-  });
-
-  await writeAudit({
-    userId: user.id,
-    entity: "request",
-    entityId: requestId,
-    action: "fulfill",
-    after: { actuals, storeComment },
-  });
-
-  return prisma.request.findUnique({
-    where: { id: requestId },
-    include: { items: true, movements: true, storeActions: true },
-  });
 }
 
 // -----------------------------------------------------------------------------
@@ -506,7 +440,7 @@ export type RequestListFilter = {
   type?: Prisma.RequestWhereInput["type"];
   requesterId?: string;
   awaitingApprovalFor?: string; // user id — PENDING and not created by that user
-  awaitingFulfillmentFor?: string; // user id — APPROVED and not created by that user
+  decidedBy?: string;           // user id — requests with any approval by that user
   limit?: number;
   offset?: number;
 };
@@ -520,9 +454,8 @@ export async function listRequests(f: RequestListFilter = {}) {
     where.status = "PENDING";
     where.requesterId = { not: f.awaitingApprovalFor };
   }
-  if (f.awaitingFulfillmentFor) {
-    where.status = "APPROVED";
-    where.requesterId = { not: f.awaitingFulfillmentFor };
+  if (f.decidedBy) {
+    where.approvals = { some: { approverId: f.decidedBy } };
   }
 
   return prisma.request.findMany({
@@ -534,6 +467,11 @@ export async function listRequests(f: RequestListFilter = {}) {
       toDepartment: { select: { id: true, code: true, name: true } },
       toSection: { select: { id: true, code: true, name: true } },
       items: { include: { palletType: { select: { id: true, code: true, name: true } } } },
+      approvals: {
+        where: f.decidedBy ? { approverId: f.decidedBy } : undefined,
+        include: { approver: { select: { id: true, fullName: true } } },
+        orderBy: { decidedAt: "desc" },
+      },
       _count: { select: { approvals: true, attachments: true } },
     },
     orderBy: { createdAt: "desc" },
@@ -555,10 +493,6 @@ export async function getRequestDetail(id: string) {
       approvals: {
         include: { approver: { select: { id: true, fullName: true } } },
         orderBy: { decidedAt: "asc" },
-      },
-      storeActions: {
-        include: { user: { select: { id: true, fullName: true } } },
-        orderBy: { actedAt: "asc" },
       },
       movements: true,
       attachments: true,

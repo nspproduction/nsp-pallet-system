@@ -250,7 +250,6 @@ export default function LiffHome() {
   const role = profile?.role;
   const canCreate = role === "REQUESTER" || role === "ADMIN";
   const canApprove = role === "APPROVER" || role === "ADMIN";
-  const canFulfill = role === "STORE" || role === "ADMIN";
 
   return (
     <div className="flex flex-col">
@@ -288,13 +287,13 @@ export default function LiffHome() {
       {/* Menu */}
       <section className="flex flex-col gap-3 px-4 py-6">
         <SectionTitle>เมนูหลัก</SectionTitle>
-        <MenuItem href="/liff/requests" icon={<InboxIcon />} title="คำขอของฉัน" subtitle="ดูสถานะและประวัติ" />
-        {canApprove && (
-          <MenuItem href="/liff/approvals" icon={<CheckIcon />} title="รออนุมัติ" subtitle="คำขอที่รอฉันตัดสินใจ" />
+        {canCreate && (
+          <MenuItem href="/liff/requests" icon={<InboxIcon />} title="คำขอของฉัน" subtitle="ดูสถานะและประวัติ" />
         )}
-        {canFulfill && (
+        {canApprove && (
           <>
-            <MenuItem href="/liff/fulfillments" icon={<TruckIcon />} title="คำขอรอจ่าย/รอรับ" subtitle="ยืนยันส่งมอบคำขอที่อนุมัติแล้ว" />
+            <MenuItem href="/liff/approvals" icon={<CheckIcon />} title="รออนุมัติ" subtitle="คำขอที่รอฉันตัดสินใจ" />
+            <MenuItem href="/liff/approvals/history" icon={<HistoryIcon />} title="ประวัติอนุมัติ" subtitle="คำขอที่ฉันเคยตัดสินใจแล้ว" />
             <MenuItem href="/liff/balance" icon={<BoxIcon />} title="ยอดสต็อก" subtitle="ยอดคงเหลือในคลัง" />
           </>
         )}
@@ -377,13 +376,12 @@ function CheckIcon() {
     </Icon>
   );
 }
-function TruckIcon() {
+function HistoryIcon() {
   return (
     <Icon>
-      <path d="M1 3h15v13H1z" />
-      <path d="M16 8h4l3 3v5h-7V8z" />
-      <circle cx="5.5" cy="18.5" r="2.5" />
-      <circle cx="18.5" cy="18.5" r="2.5" />
+      <path d="M3 3v5h5" />
+      <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" />
+      <path d="M12 7v5l4 2" />
     </Icon>
   );
 }

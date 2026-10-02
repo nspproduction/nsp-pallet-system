@@ -8,7 +8,7 @@ const Patch = z.object({
   fullName: z.string().min(1).max(120).optional(),
   employeeCode: z.string().min(1).max(40).optional(),
   phone: z.string().max(40).optional().nullable(),
-  role: z.enum(["REQUESTER", "APPROVER", "STORE", "ADMIN", "VIEWER"]).optional(),
+  role: z.enum(["REQUESTER", "APPROVER", "ADMIN", "VIEWER"]).optional(),
   status: z.enum(["PENDING", "ACTIVE", "DISABLED"]).optional(),
   departmentId: z.string().optional().nullable(),
   sectionId: z.string().optional().nullable(),

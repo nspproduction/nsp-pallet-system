@@ -16,7 +16,7 @@ const RequestTypeEnum = z.enum([
   "WRITE_OFF",
   "ADJUSTMENT",
 ]);
-const StatusEnum = z.enum(["DRAFT", "PENDING", "APPROVED", "FULFILLED", "REJECTED", "CANCELLED"]);
+const StatusEnum = z.enum(["DRAFT", "PENDING", "APPROVED", "REJECTED", "CANCELLED"]);
 const ConditionEnum = z.enum(["USABLE", "IN_REPAIR", "UNUSABLE"]);
 
 const Create = z.object({
@@ -55,7 +55,7 @@ export async function GET(req: Request) {
 
     if (scope === "mine") filter.requesterId = user.id;
     if (scope === "to-approve") filter.awaitingApprovalFor = user.id;
-    if (scope === "to-fulfill") filter.awaitingFulfillmentFor = user.id;
+    if (scope === "i-approved") filter.decidedBy = user.id;
 
     const list = await listRequests(filter);
     return ok(list);

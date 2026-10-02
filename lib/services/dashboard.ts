@@ -5,7 +5,7 @@ export interface DashboardSummary {
   warehouseUsable: number;
   outstandingOutside: number;
   pendingRequests: number;
-  approvedAwaitingFulfill: number;
+  approvedRequests: number;
   inRepair: number;
   writeOffLast30d: number;
   pendingByType: { type: string; count: number }[];
@@ -58,7 +58,7 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
     prisma.request.count({ where: { status: "APPROVED" } }),
   ]);
 
-  // Write-off in last 30 days (requests of type WRITE_OFF, fulfilled)
+  // Write-off in last 30 days (requests of type WRITE_OFF, approved)
   const from = new Date();
   from.setDate(from.getDate() - 30);
   const woAgg = await prisma.stockMovement.aggregate({
@@ -84,7 +84,7 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
     warehouseUsable,
     outstandingOutside,
     pendingRequests: pending,
-    approvedAwaitingFulfill: approved,
+    approvedRequests: approved,
     inRepair,
     writeOffLast30d,
     pendingByType,

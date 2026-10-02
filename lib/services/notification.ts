@@ -189,38 +189,13 @@ export async function notifyRequesterOfDecision(requestId: string, decision: "AP
     docNo: r.docNo,
     typeLabel: TYPE_LABEL[r.type] ?? r.type,
     requesterName: r.requester.fullName,
-    itemsSummary: comment || (decision === "APPROVED" ? "รอส่งมอบ" : "โปรดตรวจสอบ"),
+    itemsSummary: comment || (decision === "APPROVED" ? "อนุมัติแล้ว" : "โปรดตรวจสอบ"),
     linkUrl: link,
     ctaLabel: "ดูรายละเอียด",
   });
 
   const res = await linePush({ to: r.requester.lineUserId, messages: [flex] });
   await record(r.requester.id, decision === "APPROVED" ? "คำขอได้รับการอนุมัติ" : "คำขอถูกปฏิเสธ", r.docNo, link, res.error);
-}
-
-export async function notifyRequesterOfFulfillment(requestId: string) {
-  const r = await prisma.request.findUnique({
-    where: { id: requestId },
-    include: { requester: true, items: { include: { palletType: true } } },
-  });
-  if (!r || !r.requester.lineUserId) return;
-  const link = `${baseUrl()}/liff/requests/${r.id}`;
-
-  const flex = requestFlex({
-    title: "ยืนยันส่งมอบแล้ว",
-    headerColor: "#0d9488",
-    docNo: r.docNo,
-    typeLabel: TYPE_LABEL[r.type] ?? r.type,
-    requesterName: r.requester.fullName,
-    itemsSummary: r.items
-      .map((it) => `${it.palletType.name} × ${it.actualQuantity ?? it.quantity}`)
-      .join(", ")
-      .slice(0, 200),
-    linkUrl: link,
-    ctaLabel: "ดูรายละเอียด",
-  });
-  const res = await linePush({ to: r.requester.lineUserId, messages: [flex] });
-  await record(r.requester.id, "ยืนยันส่งมอบแล้ว", r.docNo, link, res.error);
 }
 
 export async function notifyLowStock(palletTypeId: string, currentBalance: number) {
