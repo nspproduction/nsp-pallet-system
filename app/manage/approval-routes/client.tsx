@@ -34,10 +34,21 @@ export function ApprovalRoutesClient({
   const [editing, setEditing] = useState<RouteData | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [listErr, setListErr] = useState<string | null>(null);
 
   async function reload() {
-    const res = await fetch("/api/approval-routes");
-    if (res.ok) setRoutes(await res.json());
+    try {
+      const res = await fetch("/api/approval-routes");
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        setListErr(payload.error ?? "โหลดข้อมูลไม่สำเร็จ");
+        return;
+      }
+      setRoutes(await res.json());
+      setListErr(null);
+    } catch {
+      setListErr("โหลดข้อมูลไม่สำเร็จ");
+    }
   }
 
   async function save(data: { departmentId: string; requestType: string; steps: StepData[] }): Promise<string | null> {
@@ -57,8 +68,17 @@ export function ApprovalRoutesClient({
   }
 
   async function remove(id: string) {
-    await fetch(`/api/approval-routes/${id}`, { method: "DELETE" });
-    await reload();
+    try {
+      const res = await fetch(`/api/approval-routes/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        setListErr(payload.error ?? "ลบไม่สำเร็จ");
+        return;
+      }
+      await reload();
+    } catch {
+      setListErr("ลบไม่สำเร็จ");
+    }
   }
 
   return (
@@ -75,6 +95,7 @@ export function ApprovalRoutesClient({
     <div className="space-y-4">
       <div className="flex justify-end">
         <button
+          type="button"
           onClick={() => { setEditing(null); setShowForm(true); }}
           className="h-9 rounded-lg bg-brand-600 px-4 text-sm font-medium text-white shadow-sm hover:bg-brand-700"
         >
@@ -82,7 +103,11 @@ export function ApprovalRoutesClient({
         </button>
       </div>
 
-      {routes.length === 0 && (
+      {listErr && (
+        <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{listErr}</p>
+      )}
+
+      {routes.length === 0 && !listErr && (
         <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-10 text-center text-sm text-slate-500">
           ยังไม่มี approval route — กด &quot;+ เพิ่ม Route&quot; เพื่อเริ่มต้น
         </div>
@@ -100,12 +125,14 @@ export function ApprovalRoutesClient({
               </div>
               <div className="flex gap-2">
                 <button
+                  type="button"
                   onClick={() => { setEditing(r); setShowForm(true); }}
                   className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50"
                 >
                   แก้ไข
                 </button>
                 <button
+                  type="button"
                   onClick={() => setConfirmDelete(r.id)}
                   className="rounded-lg border border-rose-200 px-2.5 py-1 text-xs text-rose-600 hover:bg-rose-50"
                 >
@@ -125,7 +152,7 @@ export function ApprovalRoutesClient({
                     <p className="mt-0.5 text-[11px] text-slate-500">
                       {s.approverIds.length} คน ·{" "}
                       {s.approverIds
-                        .map((id) => approvers.find((a) => a.id === id)?.fullName ?? id)
+                        .map((id) => approvers.find((a) => a.id === id)?.fullName ?? "⚠ ผู้ใช้ไม่พร้อม")
                         .join(", ")}
                     </p>
                   </div>
@@ -271,7 +298,14 @@ function RouteFormModal({
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-xs font-medium text-slate-600">ขั้นการอนุมัติ</p>
-              <button onClick={addStep} className="text-xs font-semibold text-brand-700">+ เพิ่มขั้น</button>
+              <button
+                type="button"
+                onClick={addStep}
+                disabled={steps.length >= 10}
+                className="text-xs font-semibold text-brand-700 disabled:text-slate-400"
+              >
+                + เพิ่มขั้น
+              </button>
             </div>
 
             {steps.map((step, i) => (
@@ -287,7 +321,7 @@ function RouteFormModal({
                     className="h-8 flex-1 rounded-lg border border-slate-200 bg-white px-2 text-sm outline-none focus:border-brand-500"
                   />
                   {steps.length > 1 && (
-                    <button onClick={() => removeStep(i)} className="text-xs text-rose-500">ลบ</button>
+                    <button type="button" onClick={() => removeStep(i)} className="text-xs text-rose-500">ลบ</button>
                   )}
                 </div>
                 <p className="text-[11px] text-slate-500">ผู้อนุมัติ (เลือกได้หลายคน — ใครก็ได้ 1 คนอนุมัติผ่าน)</p>

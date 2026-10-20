@@ -5,14 +5,14 @@ import { listRoutes, upsertRoute } from "@/lib/services/approval-route";
 
 const StepSchema = z.object({
   stepOrder: z.coerce.number().int().positive(),
-  name: z.string().min(1).max(80),
+  name: z.string().trim().min(1).max(80),
   approverIds: z.array(z.string()).min(1),
 });
 
 const Body = z.object({
   departmentId: z.string().min(1),
   requestType: z.enum(["ISSUE", "RETURN"]),
-  steps: z.array(StepSchema).min(1),
+  steps: z.array(StepSchema).min(1).max(10),
 });
 
 export async function GET() {

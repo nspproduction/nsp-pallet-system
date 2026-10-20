@@ -61,6 +61,8 @@ export async function getRoute(id: string) {
   });
 }
 
+const MAX_STEPS = 10;
+
 export async function upsertRoute(user: SessionUser, input: RouteInput) {
   requireAdmin(user);
 
@@ -70,16 +72,24 @@ export async function upsertRoute(user: SessionUser, input: RouteInput) {
   if (!input.steps.length) {
     throw new HttpError(400, "ต้องมีอย่างน้อย 1 ขั้น");
   }
+  if (input.steps.length > MAX_STEPS) {
+    throw new HttpError(400, `จำนวนขั้นเกินกำหนด (สูงสุด ${MAX_STEPS} ขั้น)`);
+  }
 
   // Validate dept exists
   const dept = await prisma.department.findUnique({ where: { id: input.departmentId } });
   if (!dept) throw new HttpError(404, "ไม่พบแผนก");
 
-  // Validate step orders are sequential starting at 1
-  const sorted = [...input.steps].sort((a, b) => a.stepOrder - b.stepOrder);
+  // Normalize + validate step orders are sequential starting at 1, name non-empty after trim
+  const sorted = [...input.steps]
+    .sort((a, b) => a.stepOrder - b.stepOrder)
+    .map((s) => ({ ...s, name: s.name.trim() }));
   for (let i = 0; i < sorted.length; i++) {
     if (sorted[i].stepOrder !== i + 1) {
       throw new HttpError(400, `stepOrder ต้องเรียงต่อกันจาก 1 (พบ ${sorted[i].stepOrder})`);
+    }
+    if (!sorted[i].name) {
+      throw new HttpError(400, `ขั้นที่ ${sorted[i].stepOrder} ต้องระบุชื่อ`);
     }
     if (!sorted[i].approverIds.length) {
       throw new HttpError(400, `ขั้นที่ ${sorted[i].stepOrder} ต้องมีผู้อนุมัติอย่างน้อย 1 คน`);
@@ -190,8 +200,10 @@ export async function resolveRoute(departmentId: string, requestType: RequestTyp
  * would leave any step with 0 approvers, otherwise null.
  */
 export async function checkApproverRouteConflict(userId: string): Promise<string | null> {
+  // Only consider steps on ACTIVE routes — removing an approver from a
+  // soft-deleted route shouldn't block the admin from editing the user.
   const steps = await prisma.approvalStep.findMany({
-    where: { approverIds: { has: userId } },
+    where: { approverIds: { has: userId }, route: { isActive: true } },
     include: { route: { include: { department: { select: { name: true } } } } }
   });
 
