@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { requireUser } from "@/lib/auth/current-user";
+import { requireRole } from "@/lib/auth/current-user";
 import { fail, ok, readJson } from "@/lib/http/respond";
 import { listRoutes, upsertRoute } from "@/lib/services/approval-route";
 
@@ -17,7 +17,7 @@ const Body = z.object({
 
 export async function GET() {
   try {
-    await requireUser();
+    await requireRole("ADMIN");
     return ok(await listRoutes());
   } catch (e) {
     return fail(e);
@@ -26,7 +26,7 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const user = await requireUser();
+    const user = await requireRole("ADMIN");
     const data = Body.parse(await readJson(req));
     const route = await upsertRoute(user, data);
     return ok(route);

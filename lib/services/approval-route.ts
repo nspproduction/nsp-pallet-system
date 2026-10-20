@@ -42,6 +42,7 @@ const ROUTABLE_TYPES: RequestType[] = ["ISSUE", "RETURN"];
 
 export async function listRoutes() {
   return prisma.approvalRoute.findMany({
+    where: { isActive: true },
     include: {
       department: { select: { id: true, name: true } },
       steps: { orderBy: { stepOrder: "asc" } }
@@ -85,16 +86,22 @@ export async function upsertRoute(user: SessionUser, input: RouteInput) {
     }
   }
 
-  // Validate all approver user IDs exist
+  // Validate all approver user IDs exist AND have the DEPT_APPROVER role.
+  // (The UI already filters by role, but defend against direct API calls.)
   const allIds = input.steps.flatMap((s) => s.approverIds);
   const uniqueIds = [...new Set(allIds)];
   if (uniqueIds.length) {
     const found = await prisma.user.findMany({
-      where: { id: { in: uniqueIds } },
-      select: { id: true }
+      where: { id: { in: uniqueIds }, status: "ACTIVE" },
+      select: { id: true, fullName: true, roles: true }
     });
     if (found.length !== uniqueIds.length) {
-      throw new HttpError(400, "มี userId ของผู้อนุมัติที่ไม่พบในระบบ");
+      throw new HttpError(400, "มี userId ของผู้อนุมัติที่ไม่พบในระบบหรือไม่ active");
+    }
+    const notApprovers = found.filter((u) => !u.roles.includes("DEPT_APPROVER"));
+    if (notApprovers.length > 0) {
+      const names = notApprovers.map((u) => u.fullName).join(", ");
+      throw new HttpError(400, `ผู้อนุมัติต้องมีสิทธิ์ DEPT_APPROVER: ${names}`);
     }
   }
 

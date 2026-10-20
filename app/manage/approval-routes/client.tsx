@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { twMerge } from "tailwind-merge";
 import { ConfirmDialog } from "@/app/_components/dialogs";
 
@@ -33,8 +33,6 @@ export function ApprovalRoutesClient({
   const [routes, setRoutes] = useState<RouteData[]>(initial);
   const [editing, setEditing] = useState<RouteData | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   async function reload() {
@@ -42,17 +40,20 @@ export function ApprovalRoutesClient({
     if (res.ok) setRoutes(await res.json());
   }
 
-  async function save(data: { departmentId: string; requestType: string; steps: StepData[] }) {
-    setBusy(true); setErr(null);
+  async function save(data: { departmentId: string; requestType: string; steps: StepData[] }): Promise<string | null> {
     const res = await fetch("/api/approval-routes", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(data),
     });
-    setBusy(false);
-    if (!res.ok) { setErr((await res.json().catch(() => ({}))).error ?? "บันทึกไม่สำเร็จ"); return; }
-    setShowForm(false); setEditing(null);
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({}));
+      return payload.error ?? "บันทึกไม่สำเร็จ";
+    }
+    setShowForm(false);
+    setEditing(null);
     await reload();
+    return null;
   }
 
   async function remove(id: string) {
@@ -74,14 +75,12 @@ export function ApprovalRoutesClient({
     <div className="space-y-4">
       <div className="flex justify-end">
         <button
-          onClick={() => { setEditing(null); setShowForm(true); setErr(null); }}
+          onClick={() => { setEditing(null); setShowForm(true); }}
           className="h-9 rounded-lg bg-brand-600 px-4 text-sm font-medium text-white shadow-sm hover:bg-brand-700"
         >
           + เพิ่ม Route
         </button>
       </div>
-
-      {err && <p className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{err}</p>}
 
       {routes.length === 0 && (
         <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-10 text-center text-sm text-slate-500">
@@ -101,7 +100,7 @@ export function ApprovalRoutesClient({
               </div>
               <div className="flex gap-2">
                 <button
-                  onClick={() => { setEditing(r); setShowForm(true); setErr(null); }}
+                  onClick={() => { setEditing(r); setShowForm(true); }}
                   className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50"
                 >
                   แก้ไข
@@ -148,9 +147,8 @@ export function ApprovalRoutesClient({
           initial={editing}
           departments={departments}
           approvers={approvers}
-          busy={busy}
           onSave={save}
-          onClose={() => { setShowForm(false); setEditing(null); setErr(null); }}
+          onClose={() => { setShowForm(false); setEditing(null); }}
         />
       )}
     </div>
@@ -166,15 +164,13 @@ function RouteFormModal({
   initial,
   departments,
   approvers,
-  busy,
   onSave,
   onClose,
 }: {
   initial: RouteData | null;
   departments: Department[];
   approvers: Approver[];
-  busy: boolean;
-  onSave: (data: { departmentId: string; requestType: string; steps: StepData[] }) => Promise<void>;
+  onSave: (data: { departmentId: string; requestType: string; steps: StepData[] }) => Promise<string | null>;
   onClose: () => void;
 }) {
   const [departmentId, setDepartmentId] = useState(initial?.departmentId ?? "");
@@ -184,6 +180,25 @@ function RouteFormModal({
       ? initial.steps
       : [{ stepOrder: 1, name: "หัวหน้าแผนก", approverIds: [] }],
   );
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  // Close on ESC
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  async function handleSave() {
+    setBusy(true);
+    setErr(null);
+    const errMsg = await onSave({ departmentId, requestType, steps });
+    setBusy(false);
+    if (errMsg) setErr(errMsg);
+  }
 
   function addStep() {
     setSteps([...steps, { stepOrder: steps.length + 1, name: "", approverIds: [] }]);
@@ -203,15 +218,28 @@ function RouteFormModal({
     updateStep(stepIdx, { approverIds: next });
   }
 
-  const deptApprovers = approvers.filter((a) => a.departmentId === departmentId);
+  // Show approvers that match the selected dept + anyone already assigned to a step
+  // (so admin can un-assign them if their dept was changed after assignment).
+  const assignedIds = new Set(steps.flatMap((s) => s.approverIds));
+  const deptApprovers = approvers.filter(
+    (a) => a.departmentId === departmentId || assignedIds.has(a.id),
+  );
   const INPUT = "h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-brand-500";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 p-4 md:items-center">
-      <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl">
+    <div
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 p-4 md:items-center"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        className="w-full max-w-lg rounded-2xl bg-white shadow-xl"
+      >
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <h2 className="font-semibold text-slate-900">{initial ? "แก้ไข Route" : "เพิ่ม Route ใหม่"}</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">✕</button>
+          <button type="button" onClick={onClose} aria-label="ปิด" className="text-slate-400 hover:text-slate-600">✕</button>
         </div>
 
         <div className="max-h-[70vh] space-y-4 overflow-y-auto p-5">
@@ -270,21 +298,28 @@ function RouteFormModal({
                   {departmentId && deptApprovers.length === 0 && (
                     <p className="text-[11px] text-amber-600">ไม่มีผู้ใช้ role DEPT_APPROVER ในแผนกนี้ — กรุณาตั้งค่า role ก่อน</p>
                   )}
-                  {deptApprovers.map((a) => (
-                    <button
-                      key={a.id}
-                      type="button"
-                      onClick={() => toggleApprover(i, a.id)}
-                      className={twMerge(
-                        "rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition",
-                        step.approverIds.includes(a.id)
-                          ? "border-brand-500 bg-brand-50 text-brand-700"
-                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
-                      )}
-                    >
-                      {a.fullName}
-                    </button>
-                  ))}
+                  {deptApprovers.map((a) => {
+                    const selected = step.approverIds.includes(a.id);
+                    const mismatchedDept = a.departmentId !== departmentId;
+                    return (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => toggleApprover(i, a.id)}
+                        title={mismatchedDept ? "ผู้อนุมัติไม่ได้อยู่แผนกนี้แล้ว" : undefined}
+                        className={twMerge(
+                          "rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition",
+                          selected
+                            ? "border-brand-500 bg-brand-50 text-brand-700"
+                            : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                          mismatchedDept && "border-dashed border-amber-400 text-amber-700",
+                        )}
+                      >
+                        {a.fullName}
+                        {mismatchedDept && <span className="ml-1 text-[9px]">⚠</span>}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             ))}
@@ -298,15 +333,20 @@ function RouteFormModal({
           </div>
         </div>
 
+        {err && (
+          <p className="mx-5 mb-2 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{err}</p>
+        )}
         <div className="flex gap-3 border-t border-border px-5 py-4">
           <button
+            type="button"
             onClick={onClose}
             className="h-10 flex-1 rounded-xl border border-slate-200 text-sm font-medium text-slate-700"
           >
             ยกเลิก
           </button>
           <button
-            onClick={() => onSave({ departmentId, requestType, steps })}
+            type="button"
+            onClick={handleSave}
             disabled={busy || !departmentId}
             className="h-10 flex-1 rounded-xl bg-brand-600 text-sm font-semibold text-white disabled:opacity-50"
           >
