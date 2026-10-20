@@ -8,7 +8,7 @@ import { SESSION_COOKIE_NAME } from "@/lib/auth/cookie-name";
 // Routes that require NO session (redirect to /app if already logged in)
 const GUEST_ONLY_PATHS = ["/auth/login", "/auth/register", "/auth/forgot-password", "/auth/reset-password"];
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const hasCookie = Boolean(req.cookies.get(SESSION_COOKIE_NAME)?.value);
 
@@ -32,5 +32,5 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/auth/:path*", "/manage/:path*", "/app", "/app/:path*"],
+  matcher: ["/auth/:path*", "/manage/:path*", "/app", "/app/:path*"]
 };
