@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { requireUser } from "@/lib/auth/current-user";
+import { requireRole, requireUser } from "@/lib/auth/current-user";
 import { fail, ok, readJson } from "@/lib/http/respond";
 import { listOperatingHours, createOperatingHours, checkOperatingHours } from "@/lib/services/operating-hours";
 
@@ -12,6 +12,8 @@ const Body = z.object({
 
 export async function GET(req: Request) {
   try {
+    // GET is used by both the admin UI (list) and the requester's new-request
+    // page (?check=1 for the open/closed banner), so we only require login here.
     await requireUser();
     const url = new URL(req.url);
     if (url.searchParams.get("check") === "1") {
@@ -25,7 +27,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const user = await requireUser();
+    const user = await requireRole("ADMIN");
     const data = Body.parse(await readJson(req));
     const created = await createOperatingHours(user, data);
     return ok(created);

@@ -554,6 +554,9 @@ export async function adjustStock(
   if (!input.fromDepartmentId && !input.toDepartmentId) {
     throw new HttpError(400, "ต้องระบุ fromDepartment หรือ toDepartment อย่างน้อย 1 อย่าง");
   }
+  if (input.fromDepartmentId && input.toDepartmentId && input.fromDepartmentId === input.toDepartmentId) {
+    throw new HttpError(400, "fromDepartment และ toDepartment ต้องไม่ใช่แผนกเดียวกัน");
+  }
 
   const warehouse = await getWarehouseDept();
   const reason = `[ADJUST] ${input.reason.trim()}`;

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { requireUser } from "@/lib/auth/current-user";
+import { requireRole } from "@/lib/auth/current-user";
 import { fail, ok, readJson } from "@/lib/http/respond";
 import { updateOperatingHours, deleteOperatingHours } from "@/lib/services/operating-hours";
 
@@ -12,7 +12,7 @@ const Patch = z.object({
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await requireUser();
+    const user = await requireRole("ADMIN");
     const { id } = await params;
     const data = Patch.parse(await readJson(req));
     const updated = await updateOperatingHours(user, id, data);
@@ -24,7 +24,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await requireUser();
+    const user = await requireRole("ADMIN");
     const { id } = await params;
     await deleteOperatingHours(user, id);
     return ok({ deleted: true });

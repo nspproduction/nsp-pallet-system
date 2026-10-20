@@ -1,5 +1,5 @@
 import { requireUser } from "@/lib/auth/current-user";
-import { getDashboardSummary, getOutstandingByDepartment } from "@/lib/services/dashboard";
+import { getDashboardSummary } from "@/lib/services/dashboard";
 import { getWarehouseConditionSummary } from "@/lib/services/warehouse";
 import { LiffTopBar } from "../_shared";
 
@@ -8,10 +8,9 @@ export const dynamic = "force-dynamic";
 export default async function AppDashboardPage() {
   await requireUser();
 
-  const [s, warehouse, outstanding] = await Promise.all([
+  const [s, warehouse] = await Promise.all([
     getDashboardSummary(),
     getWarehouseConditionSummary(),
-    getOutstandingByDepartment(),
   ]);
 
   return (
@@ -25,32 +24,6 @@ export default async function AppDashboardPage() {
         <KpiCard label="ค้างนอกคลัง" value={s.outstandingOutside} tone="warning" />
         <KpiCard label="ตัดจำหน่าย (30 วัน)" value={s.writeOffLast30d} tone="rose" />
       </div>
-
-      {/* ─── ค้างนอกคลัง แยกตามแผนก ──────────────────────────── */}
-      <section className="mx-4 mt-4 rounded-2xl border border-border bg-white p-4 shadow-sm">
-        <p className="text-sm font-semibold text-slate-900">ค้างนอกคลัง แยกตามแผนก</p>
-        {outstanding.length === 0 ? (
-          <p className="mt-3 text-xs text-slate-400">ไม่มีพาเลทค้างนอกคลัง</p>
-        ) : (
-          <div className="mt-3 divide-y divide-slate-100">
-            {outstanding.map((d) => (
-              <div key={d.department.id} className="py-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-slate-800">{d.department.name}</span>
-                  <span className="font-mono text-sm font-bold text-slate-900">{d.total.toLocaleString("th-TH")}</span>
-                </div>
-                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
-                  {d.rows.map((r, i) => (
-                    <span key={i} className="text-[10px] text-slate-500">
-                      {r.palletType.name}: {r.quantity}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
 
       {/* ─── ยอดในคลัง ────────────────────────────────────────── */}
       <section className="mx-4 mt-4 rounded-2xl border border-border bg-white p-4 shadow-sm">

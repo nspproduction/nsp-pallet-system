@@ -1,8 +1,7 @@
 import { z } from "zod";
-import { requireUser } from "@/lib/auth/current-user";
+import { requireRole } from "@/lib/auth/current-user";
 import { fail, ok, readJson } from "@/lib/http/respond";
 import { adjustStock } from "@/lib/services/request";
-import { prisma } from "@/lib/prisma";
 
 const Body = z.object({
   palletTypeId: z.string(),
@@ -10,31 +9,12 @@ const Body = z.object({
   fromDepartmentId: z.string().optional().nullable(),
   toDepartmentId: z.string().optional().nullable(),
   quantity: z.coerce.number().int().positive(),
-  reason: z.string().min(1).max(500),
+  reason: z.string().trim().min(1).max(500),
 });
-
-export async function GET() {
-  try {
-    await requireUser();
-    const list = await prisma.stockMovement.findMany({
-      where: { reason: { startsWith: "[ADJUST]" } },
-      include: {
-        palletType: { select: { id: true, name: true } },
-        fromDepartment: { select: { name: true } },
-        toDepartment: { select: { name: true } },
-      },
-      orderBy: { occurredAt: "desc" },
-      take: 100,
-    });
-    return ok(list);
-  } catch (e) {
-    return fail(e);
-  }
-}
 
 export async function POST(req: Request) {
   try {
-    const user = await requireUser();
+    const user = await requireRole("ADMIN");
     const body = Body.parse(await readJson(req));
     return ok(await adjustStock(user, body));
   } catch (e) {

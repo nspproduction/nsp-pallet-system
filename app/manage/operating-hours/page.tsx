@@ -14,7 +14,7 @@ export default async function Page() {
     <div className="space-y-6">
       <PageHeader
         title="ช่วงเวลาทำรายการ"
-        subtitle="กำหนดวัน-เวลาที่ผู้ใช้สามารถส่งคำขอปกติได้ — นอกเวลาต้องส่งเป็น 'คำขอด่วน'"
+        subtitle="กำหนดวัน-เวลาที่ผู้ใช้สามารถสร้างคำขอได้ — นอกเวลาหรือวันหยุดจะสร้างคำขอไม่ได้"
       />
       <OperatingHoursClient hours={hours} holidays={holidays} />
     </div>

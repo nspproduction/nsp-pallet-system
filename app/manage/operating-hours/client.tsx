@@ -8,6 +8,15 @@ interface HolidayRow { id: string; date: string | Date; name: string }
 
 const DAY_LABELS = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัส", "ศุกร์", "เสาร์"];
 const INPUT = "h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-brand-500";
+const ERR_CLS = "rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700";
+
+const HOURS_DEFAULTS = { dayOfWeek: 1, startTime: "09:00", endTime: "11:30", label: "" };
+const HOLIDAY_DEFAULTS = { date: "", name: "" };
+
+async function parseErrorMessage(res: Response, fallback: string): Promise<string> {
+  const data = await res.json().catch(() => ({}));
+  return data.error ?? fallback;
+}
 
 export function OperatingHoursClient({
   hours: initial,
@@ -23,17 +32,49 @@ export function OperatingHoursClient({
   const [err, setErr] = useState<string | null>(null);
 
   // form state
-  const [dayOfWeek, setDayOfWeek] = useState(1);
-  const [startTime, setStartTime] = useState("09:00");
-  const [endTime, setEndTime] = useState("11:30");
-  const [label, setLabel] = useState("");
-  const [holidayDate, setHolidayDate] = useState("");
-  const [holidayName, setHolidayName] = useState("");
+  const [dayOfWeek, setDayOfWeek] = useState(HOURS_DEFAULTS.dayOfWeek);
+  const [startTime, setStartTime] = useState(HOURS_DEFAULTS.startTime);
+  const [endTime, setEndTime] = useState(HOURS_DEFAULTS.endTime);
+  const [label, setLabel] = useState(HOURS_DEFAULTS.label);
+  const [holidayDate, setHolidayDate] = useState(HOLIDAY_DEFAULTS.date);
+  const [holidayName, setHolidayName] = useState(HOLIDAY_DEFAULTS.name);
   const [busy, setBusy] = useState(false);
 
+  function resetHoursForm() {
+    setDayOfWeek(HOURS_DEFAULTS.dayOfWeek);
+    setStartTime(HOURS_DEFAULTS.startTime);
+    setEndTime(HOURS_DEFAULTS.endTime);
+    setLabel(HOURS_DEFAULTS.label);
+  }
+  function resetHolidayForm() {
+    setHolidayDate(HOLIDAY_DEFAULTS.date);
+    setHolidayName(HOLIDAY_DEFAULTS.name);
+  }
+
   async function reloadHours() {
-    const res = await fetch("/api/operating-hours");
-    if (res.ok) setHours(await res.json());
+    try {
+      const res = await fetch("/api/operating-hours");
+      if (!res.ok) {
+        setErr(await parseErrorMessage(res, "โหลดข้อมูลไม่สำเร็จ"));
+        return;
+      }
+      setHours(await res.json());
+    } catch {
+      setErr("โหลดข้อมูลไม่สำเร็จ");
+    }
+  }
+
+  async function reloadHolidays() {
+    try {
+      const res = await fetch("/api/operating-hours/holidays");
+      if (!res.ok) {
+        setErr(await parseErrorMessage(res, "โหลดข้อมูลไม่สำเร็จ"));
+        return;
+      }
+      setHolidays(await res.json());
+    } catch {
+      setErr("โหลดข้อมูลไม่สำเร็จ");
+    }
   }
 
   async function saveHours() {
@@ -44,14 +85,27 @@ export function OperatingHoursClient({
       body: JSON.stringify({ dayOfWeek, startTime, endTime, label: label || null }),
     });
     setBusy(false);
-    if (!res.ok) { setErr((await res.json().catch(() => ({}))).error ?? "บันทึกไม่สำเร็จ"); return; }
-    setShowForm(false); setLabel("");
+    if (!res.ok) {
+      setErr(await parseErrorMessage(res, "บันทึกไม่สำเร็จ"));
+      return;
+    }
+    setShowForm(false);
+    resetHoursForm();
     await reloadHours();
   }
 
   async function deleteHours(id: string) {
-    await fetch(`/api/operating-hours/${id}`, { method: "DELETE" });
-    await reloadHours();
+    setErr(null);
+    try {
+      const res = await fetch(`/api/operating-hours/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        setErr(await parseErrorMessage(res, "ลบไม่สำเร็จ"));
+        return;
+      }
+      await reloadHours();
+    } catch {
+      setErr("ลบไม่สำเร็จ");
+    }
   }
 
   async function saveHoliday() {
@@ -62,16 +116,27 @@ export function OperatingHoursClient({
       body: JSON.stringify({ date: holidayDate, name: holidayName }),
     });
     setBusy(false);
-    if (!res.ok) { setErr((await res.json().catch(() => ({}))).error ?? "บันทึกไม่สำเร็จ"); return; }
-    setShowHolidayForm(false); setHolidayDate(""); setHolidayName("");
-    const h = await fetch("/api/operating-hours/holidays");
-    if (h.ok) setHolidays(await h.json());
+    if (!res.ok) {
+      setErr(await parseErrorMessage(res, "บันทึกไม่สำเร็จ"));
+      return;
+    }
+    setShowHolidayForm(false);
+    resetHolidayForm();
+    await reloadHolidays();
   }
 
   async function deleteHoliday(id: string) {
-    await fetch(`/api/operating-hours/holidays/${id}`, { method: "DELETE" });
-    const h = await fetch("/api/operating-hours/holidays");
-    if (h.ok) setHolidays(await h.json());
+    setErr(null);
+    try {
+      const res = await fetch(`/api/operating-hours/holidays/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        setErr(await parseErrorMessage(res, "ลบไม่สำเร็จ"));
+        return;
+      }
+      await reloadHolidays();
+    } catch {
+      setErr("ลบไม่สำเร็จ");
+    }
   }
 
   // Group hours by day
@@ -84,6 +149,8 @@ export function OperatingHoursClient({
 
   return (
     <div className="space-y-6">
+      {err && <p className={ERR_CLS}>{err}</p>}
+
       {/* Operating hours section */}
       <div className="rounded-2xl border border-border bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between">
@@ -92,20 +159,19 @@ export function OperatingHoursClient({
             <p className="mt-0.5 text-sm text-slate-500">เพิ่มได้หลายช่วงต่อวัน เช่น เช้า 09:00–11:30 และบ่าย 13:00–15:00</p>
           </div>
           <button
-            onClick={() => setShowForm(true)}
+            type="button"
+            onClick={() => { setShowForm(true); setErr(null); }}
             className="h-9 rounded-lg bg-brand-600 px-4 text-sm font-medium text-white hover:bg-brand-700"
           >
             + เพิ่มช่วงเวลา
           </button>
         </div>
 
-        {err && <p className="mt-3 rounded-lg bg-rose-50 p-2 text-sm text-rose-700">{err}</p>}
-
         {hours.length === 0 ? (
           <div className="mt-6 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
             <p className="text-sm font-medium text-slate-600">ยังไม่ได้กำหนดช่วงเวลา</p>
             <p className="mt-1 text-xs text-amber-600">
-              ⚠️ เมื่อไม่มีช่วงเวลา — ผู้ใช้จะส่งได้เฉพาะคำขอด่วนเท่านั้น
+              ⚠️ เมื่อไม่มีช่วงเวลา — ผู้ใช้จะไม่สามารถสร้างคำขอได้
             </p>
           </div>
         ) : (
@@ -125,7 +191,9 @@ export function OperatingHoursClient({
                         {r.startTime}–{r.endTime}
                         {r.label && <span className="text-brand-500">({r.label})</span>}
                         <button
+                          type="button"
                           onClick={() => deleteHours(r.id)}
+                          aria-label="ลบ"
                           className="ml-1 text-brand-400 hover:text-rose-600"
                         >
                           ×
@@ -163,8 +231,21 @@ export function OperatingHoursClient({
               </label>
             </div>
             <div className="flex gap-2">
-              <button onClick={() => setShowForm(false)} className="h-9 rounded-lg border border-slate-200 px-4 text-sm text-slate-600">ยกเลิก</button>
-              <button onClick={saveHours} disabled={busy} className="h-9 rounded-lg bg-brand-600 px-4 text-sm font-medium text-white disabled:opacity-50">บันทึก</button>
+              <button
+                type="button"
+                onClick={() => { setShowForm(false); resetHoursForm(); setErr(null); }}
+                className="h-9 rounded-lg border border-slate-200 px-4 text-sm text-slate-600"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={saveHours}
+                disabled={busy}
+                className="h-9 rounded-lg bg-brand-600 px-4 text-sm font-medium text-white disabled:opacity-50"
+              >
+                {busy ? "กำลังบันทึก..." : "บันทึก"}
+              </button>
             </div>
           </div>
         )}
@@ -175,10 +256,11 @@ export function OperatingHoursClient({
         <div className="flex items-center justify-between">
           <div>
             <h2 className="font-semibold text-slate-900">วันหยุดพิเศษ</h2>
-            <p className="mt-0.5 text-sm text-slate-500">วันที่กำหนดไว้จะไม่สามารถส่งคำขอปกติได้ทั้งวัน</p>
+            <p className="mt-0.5 text-sm text-slate-500">วันที่กำหนดไว้จะไม่สามารถสร้างคำขอได้ทั้งวัน</p>
           </div>
           <button
-            onClick={() => setShowHolidayForm(true)}
+            type="button"
+            onClick={() => { setShowHolidayForm(true); setErr(null); }}
             className="h-9 rounded-lg bg-slate-100 px-4 text-sm font-medium text-slate-700 hover:bg-slate-200"
           >
             + เพิ่มวันหยุด
@@ -195,7 +277,13 @@ export function OperatingHoursClient({
                   <p className="text-sm font-medium text-slate-800">{h.name}</p>
                   <p className="text-xs text-slate-500">{new Date(String(h.date)).toLocaleDateString("th-TH", { dateStyle: "long" })}</p>
                 </div>
-                <button onClick={() => deleteHoliday(h.id)} className="text-xs text-rose-500 hover:text-rose-700">ลบ</button>
+                <button
+                  type="button"
+                  onClick={() => deleteHoliday(h.id)}
+                  className="text-xs text-rose-500 hover:text-rose-700"
+                >
+                  ลบ
+                </button>
               </li>
             ))}
           </ul>
@@ -215,8 +303,21 @@ export function OperatingHoursClient({
               </label>
             </div>
             <div className="flex gap-2">
-              <button onClick={() => setShowHolidayForm(false)} className="h-9 rounded-lg border border-slate-200 px-4 text-sm text-slate-600">ยกเลิก</button>
-              <button onClick={saveHoliday} disabled={busy || !holidayDate || !holidayName} className="h-9 rounded-lg bg-brand-600 px-4 text-sm font-medium text-white disabled:opacity-50">บันทึก</button>
+              <button
+                type="button"
+                onClick={() => { setShowHolidayForm(false); resetHolidayForm(); setErr(null); }}
+                className="h-9 rounded-lg border border-slate-200 px-4 text-sm text-slate-600"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={saveHoliday}
+                disabled={busy || !holidayDate || !holidayName.trim()}
+                className="h-9 rounded-lg bg-brand-600 px-4 text-sm font-medium text-white disabled:opacity-50"
+              >
+                {busy ? "กำลังบันทึก..." : "บันทึก"}
+              </button>
             </div>
           </div>
         )}

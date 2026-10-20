@@ -8,32 +8,33 @@ export const dynamic = "force-dynamic";
 const CONDITION_LABEL: Record<string, string> = {
   GOOD: "ดี",
   PENDING_REPAIR: "ส่งซ่อม",
-  DAMAGED: "เสีย"
+  DAMAGED: "เสีย",
 };
 
 export default async function Page() {
-  const user = await requireUser();
-  const isAdmin = user.roles.includes("ADMIN");
+  await requireUser();
 
-  const list = await prisma.stockMovement.findMany({
-    where: { reason: { startsWith: "[ADJUST]" } },
-    include: {
-      palletType: { select: { name: true } },
-      fromDepartment: { select: { name: true } },
-      toDepartment: { select: { name: true } }
-    },
-    orderBy: { occurredAt: "desc" },
-    take: 100
-  });
-  const palletTypes = await prisma.palletType.findMany({ where: { active: true }, orderBy: { name: "asc" } });
-  const departments = await prisma.department.findMany({ where: { active: true }, orderBy: { name: "asc" } });
+  const [list, palletTypes, departments] = await Promise.all([
+    prisma.stockMovement.findMany({
+      where: { warehouseOp: { type: "ADJUSTMENT" } },
+      include: {
+        palletType: { select: { name: true } },
+        fromDepartment: { select: { name: true } },
+        toDepartment: { select: { name: true } },
+      },
+      orderBy: { occurredAt: "desc" },
+      take: 100,
+    }),
+    prisma.palletType.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
+    prisma.department.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
+  ]);
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="ปรับยอด"
         subtitle="ปรับยอดสต็อกเมื่อพบความคลาดเคลื่อน (บันทึก audit เต็ม)"
-        actions={isAdmin ? <AdjustmentsClient palletTypes={palletTypes} departments={departments} /> : null}
+        actions={<AdjustmentsClient palletTypes={palletTypes} departments={departments} />}
       />
       {list.length === 0 ? (
         <Card>
@@ -41,7 +42,7 @@ export default async function Page() {
         </Card>
       ) : (
         <Card>
-          <Table head={["เวลา", "พาเลท", "สถานะ", "จาก", "ไป", "จำนวน", "เหตุผล"]}>
+          <Table head={["เวลา", "พาเลท", "สภาพ", "จาก", "ไป", "จำนวน", "เหตุผล"]}>
             {list.map((m) => (
               <tr key={m.id}>
                 <td className="px-4 py-3 text-xs text-slate-500">{m.occurredAt.toLocaleString("th-TH")}</td>

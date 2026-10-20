@@ -69,13 +69,14 @@ export interface OperatingStatus {
 
 /** Check whether the current Bangkok time falls within any active operating window. */
 export async function checkOperatingHours(): Promise<OperatingStatus> {
-  const { dayOfWeek, time } = nowBangkok();
+  const { dayOfWeek, time, dateStr } = nowBangkok();
 
-  // Check holiday
-  const today = new Date();
-  const startOfDay = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+  // Compare against the Bangkok "today" date, not the server's local date.
+  // HolidayDate.date is @db.Date which is stored as UTC midnight for that calendar day.
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const bkkToday = new Date(Date.UTC(y, m - 1, d));
   const holiday = await prisma.holidayDate.findFirst({
-    where: { date: startOfDay, isActive: true }
+    where: { date: bkkToday, isActive: true }
   });
   if (holiday) return { isOpen: false, nextOpenAt: `วันหยุด: ${holiday.name}` };
 
@@ -112,13 +113,41 @@ export async function listOperatingHours() {
 export async function createOperatingHours(user: SessionUser, input: HoursInput) {
   if (!user.roles.includes("ADMIN")) throw new HttpError(403, "เฉพาะ Admin เท่านั้น");
   validateTimeRange(input);
+  await assertNoOverlap(input.dayOfWeek, input.startTime, input.endTime);
   return prisma.operatingHours.create({ data: { ...input, label: input.label ?? null } });
 }
 
 export async function updateOperatingHours(user: SessionUser, id: string, input: Partial<HoursInput>) {
   if (!user.roles.includes("ADMIN")) throw new HttpError(403, "เฉพาะ Admin เท่านั้น");
   if (input.startTime && input.endTime) validateTimeRange(input as HoursInput);
+  // If the time or day is changing, re-check overlap against siblings (excluding self).
+  if (input.startTime || input.endTime || input.dayOfWeek !== undefined) {
+    const current = await prisma.operatingHours.findUnique({ where: { id } });
+    if (!current) throw new HttpError(404, "ไม่พบช่วงเวลา");
+    await assertNoOverlap(
+      input.dayOfWeek ?? current.dayOfWeek,
+      input.startTime ?? current.startTime,
+      input.endTime ?? current.endTime,
+      id,
+    );
+  }
   return prisma.operatingHours.update({ where: { id }, data: input });
+}
+
+async function assertNoOverlap(dayOfWeek: number, startTime: string, endTime: string, excludeId?: string) {
+  const siblings = await prisma.operatingHours.findMany({
+    where: { dayOfWeek, isActive: true, ...(excludeId ? { id: { not: excludeId } } : {}) }
+  });
+  const newStart = timeToMinutes(startTime);
+  const newEnd = timeToMinutes(endTime);
+  for (const h of siblings) {
+    const es = timeToMinutes(h.startTime);
+    const ee = timeToMinutes(h.endTime);
+    // overlap when newStart < existing.end AND newEnd > existing.start
+    if (newStart < ee && newEnd > es) {
+      throw new HttpError(400, `ช่วงเวลาซ้อนกับช่วงเวลาเดิม ${h.startTime}–${h.endTime}`);
+    }
+  }
 }
 
 export async function deleteOperatingHours(user: SessionUser, id: string) {
@@ -151,7 +180,11 @@ export async function listHolidays() {
 
 export async function createHoliday(user: SessionUser, date: Date, name: string) {
   if (!user.roles.includes("ADMIN")) throw new HttpError(403, "เฉพาะ Admin เท่านั้น");
-  return prisma.holidayDate.create({ data: { date, name } });
+  const existing = await prisma.holidayDate.findFirst({ where: { date, isActive: true } });
+  if (existing) {
+    throw new HttpError(400, `มีวันหยุดในวันนี้แล้ว: ${existing.name}`);
+  }
+  return prisma.holidayDate.create({ data: { date, name: name.trim() } });
 }
 
 export async function deleteHoliday(user: SessionUser, id: string) {

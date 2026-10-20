@@ -21,6 +21,12 @@ const TYPE_LABEL: Record<string, string> = {
   RETURN: "คืนเข้า",
 };
 
+// Match RequestCard tone across the app
+const TYPE_BADGE: Record<string, string> = {
+  ISSUE: "bg-orange-50 text-orange-700 border border-orange-200",
+  RETURN: "bg-blue-50 text-blue-700 border border-blue-200",
+};
+
 export function ApprovalRoutesClient({
   routes: initial,
   departments,
@@ -119,7 +125,12 @@ export function ApprovalRoutesClient({
             <div className="flex items-start justify-between gap-2">
               <div>
                 <p className="mt-0.5 font-semibold text-slate-900">{r.department.name}</p>
-                <span className="mt-1 inline-block rounded-full bg-brand-100 px-2.5 py-0.5 text-[11px] font-medium text-brand-700">
+                <span
+                  className={twMerge(
+                    "mt-1 inline-block rounded-full px-2.5 py-0.5 text-[11px] font-medium",
+                    TYPE_BADGE[r.requestType] ?? "bg-slate-100 text-slate-700 border border-slate-200",
+                  )}
+                >
                   {TYPE_LABEL[r.requestType] ?? r.requestType}
                 </span>
               </div>
@@ -297,6 +308,10 @@ function RouteFormModal({
   const deptApprovers = approvers.filter(
     (a) => a.departmentId === departmentId || assignedIds.has(a.id),
   );
+  // Every step must have a non-empty name and at least one approver — otherwise
+  // saving would be rejected by the server. Block the save button early so the
+  // admin doesn't need a round-trip to find out.
+  const stepsValid = steps.every((s) => s.name.trim().length > 0 && s.approverIds.length > 0);
   const INPUT = "h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-brand-500";
 
   return (
@@ -383,8 +398,13 @@ function RouteFormModal({
               </button>
             </div>
 
-            {steps.map((step, i) => (
-              <div key={i} className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/50 p-3">
+            {steps.map((step, i) => {
+              const needsApprover = step.approverIds.length === 0;
+              return (
+              <div key={i} className={twMerge(
+                "space-y-2 rounded-xl border p-3",
+                needsApprover ? "border-rose-300 bg-rose-50/30" : "border-slate-200 bg-slate-50/50",
+              )}>
                 <div className="flex items-center gap-2">
                   <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand-600 text-xs font-bold text-white">
                     {step.stepOrder}
@@ -406,6 +426,9 @@ function RouteFormModal({
                   )}
                   {departmentId && deptApprovers.length === 0 && (
                     <p className="text-[11px] text-amber-600">ไม่มีผู้ใช้ role DEPT_APPROVER ในแผนกนี้ — กรุณาตั้งค่า role ก่อน</p>
+                  )}
+                  {departmentId && deptApprovers.length > 0 && needsApprover && (
+                    <p className="text-[11px] text-rose-600">กรุณาเลือกผู้อนุมัติอย่างน้อย 1 คน</p>
                   )}
                   {deptApprovers.map((a) => {
                     const selected = step.approverIds.includes(a.id);
@@ -431,7 +454,8 @@ function RouteFormModal({
                   })}
                 </div>
               </div>
-            ))}
+              );
+            })}
 
             <div className="flex items-center gap-2 rounded-xl border border-dashed border-slate-200 p-3 text-sm text-slate-400">
               <span className="grid h-6 w-6 place-items-center rounded-full bg-slate-100 text-xs font-bold text-slate-400">
@@ -456,7 +480,7 @@ function RouteFormModal({
           <button
             type="button"
             onClick={handleSave}
-            disabled={busy || !departmentId || !requestType}
+            disabled={busy || !departmentId || !requestType || !stepsValid}
             className="h-10 flex-1 rounded-xl bg-brand-600 text-sm font-semibold text-white disabled:opacity-50"
           >
             {busy ? "กำลังบันทึก..." : "บันทึก"}
