@@ -8,20 +8,20 @@ import { Skeleton } from "./ui";
 
 interface Me {
   authenticated: boolean;
-  user?: { id: string; fullName: string; role: string; status: string };
+  user?: { id: string; fullName: string; roles: string[]; status: string };
 }
 
 interface DevUser {
-  employeeCode: string;
+  email: string;
   fullName: string;
-  role: string;
-  department?: { code: string; name: string } | null;
+  roles: string[];
+  department?: { name: string } | null;
 }
 
 export function AuthPanel({ devMode }: { devMode: boolean }) {
   const [me, setMe] = useState<Me | null>(null);
   const [devUsers, setDevUsers] = useState<DevUser[]>([]);
-  const [employeeCode, setEmployeeCode] = useState("");
+  const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,7 +40,7 @@ export function AuthPanel({ devMode }: { devMode: boolean }) {
         if (!res.ok) return;
         const list = (await res.json()) as DevUser[];
         setDevUsers(list);
-        if (list.length > 0) setEmployeeCode(list[0].employeeCode);
+        if (list.length > 0) setEmail(list[0].email);
       } catch {
         // ignore
       }
@@ -54,7 +54,7 @@ export function AuthPanel({ devMode }: { devMode: boolean }) {
       const res = await fetch("/api/auth/dev-login", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ employeeCode })
+        body: JSON.stringify({ email })
       });
       if (!res.ok) {
         const data = await res.json();
@@ -93,7 +93,7 @@ export function AuthPanel({ devMode }: { devMode: boolean }) {
         <div className="min-w-0 flex-1">
           <p className="font-medium text-slate-900">{me.user.fullName}</p>
           <p className="text-xs text-slate-500">
-            {me.user.role} · {me.user.status}
+            {me.user.roles.join(", ")} · {me.user.status}
           </p>
         </div>
         <button
@@ -111,11 +111,11 @@ export function AuthPanel({ devMode }: { devMode: boolean }) {
   return (
     <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4 text-sm">
       <p className="text-xs font-semibold uppercase tracking-widest text-amber-700">DEV login (localhost เท่านั้น)</p>
-      <p className="mt-1 text-xs text-slate-600">เลือกผู้ใช้ตัวอย่างจาก seed เพื่อทดสอบระบบ (บน prod ใช้ LINE login ผ่าน /liff)</p>
+      <p className="mt-1 text-xs text-slate-600">เลือกผู้ใช้ตัวอย่างจาก seed เพื่อทดสอบระบบ (บน prod ใช้ session login ผ่าน /login)</p>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <select
-          value={employeeCode}
-          onChange={(e) => setEmployeeCode(e.target.value)}
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
           disabled={devUsers.length === 0}
           className="h-9 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-sm disabled:bg-slate-50 disabled:text-slate-400"
         >
@@ -123,15 +123,15 @@ export function AuthPanel({ devMode }: { devMode: boolean }) {
             <option value="">— ไม่มี user ที่ ACTIVE —</option>
           ) : (
             devUsers.map((u) => (
-              <option key={u.employeeCode} value={u.employeeCode}>
-                {u.fullName}-{u.department ? ` · ${u.department.code}` : ""} [{u.role}]
+              <option key={u.email} value={u.email}>
+                {u.fullName}{u.department ? ` · ${u.department.name}` : ""} [{u.roles.join(",")}]
               </option>
             ))
           )}
         </select>
         <button
           onClick={login}
-          disabled={busy || !employeeCode}
+          disabled={busy || !email}
           className="h-9 rounded-lg bg-slate-900 px-4 text-sm font-medium text-white disabled:opacity-50"
         >
           {busy ? "กำลังเข้า..." : "เข้าใช้งาน"}

@@ -1,6 +1,8 @@
 // Seed script for demo/development.
 // Run: npm run db:seed
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, UserRole } from "@prisma/client";
+import { hashPassword } from "../lib/auth/password";
+import { moveStock } from "../lib/server/stock";
 
 const prisma = new PrismaClient();
 
@@ -8,80 +10,97 @@ async function main() {
   console.log("🌱 Seeding...");
 
   // ---------- Departments ----------
-  // "WH-PL" is the pallet warehouse itself (balance in warehouse = pallets at this dept).
-  // "WH" (พัสดุ) is the materials dept — only this dept can create RECEIVE_NEW.
-  const departments = [
-    { code: "WH-PL", name: "คลังพาเลท" },
-    { code: "WH",    name: "พัสดุ" },
-    { code: "PD",    name: "ผลิต" },
-    { code: "DISP",  name: "จ่ายสินค้า" },
-    { code: "QA",    name: "ควบคุมคุณภาพ" },
-    { code: "RD",    name: "เทคโนโลยี" },
+  // คลังพาเลท = isWarehouse true (warehouse dept that holds pallet stock)
+  const deptDefs = [
+    { name: "คลังพาเลท",    isWarehouse: true },
+    { name: "พัสดุ",        isWarehouse: false },
+    { name: "ผลิต",         isWarehouse: false },
+    { name: "จ่ายสินค้า",   isWarehouse: false },
+    { name: "ควบคุมคุณภาพ", isWarehouse: false },
+    { name: "เทคโนโลยี",    isWarehouse: false },
   ];
-  for (const d of departments) {
-    await prisma.department.upsert({ where: { code: d.code }, update: {}, create: d });
+  for (const d of deptDefs) {
+    const existing = await prisma.department.findFirst({ where: { name: d.name } });
+    if (!existing) await prisma.department.create({ data: d });
   }
   const [whPl, wh, pd, disp] = await Promise.all([
-    prisma.department.findUnique({ where: { code: "WH-PL" } }),
-    prisma.department.findUnique({ where: { code: "WH" } }),
-    prisma.department.findUnique({ where: { code: "PD" } }),
-    prisma.department.findUnique({ where: { code: "DISP" } }),
+    prisma.department.findFirst({ where: { isWarehouse: true } }),
+    prisma.department.findFirst({ where: { name: "พัสดุ" } }),
+    prisma.department.findFirst({ where: { name: "ผลิต" } }),
+    prisma.department.findFirst({ where: { name: "จ่ายสินค้า" } }),
   ]);
 
   // ---------- Users ----------
+  // Default dev password: Noritake@2026
+  const defaultHash = await hashPassword("Noritake@2026");
   const users = [
-    { employeeCode: "EMP-ADMIN",   fullName: "Admin",                      role: "ADMIN"     as const, status: "ACTIVE" as const, departmentId: whPl?.id ?? null },
-    { employeeCode: "EMP-APR-01",  fullName: "หัวหน้าคลังพาเลท ทดสอบ",      role: "APPROVER"  as const, status: "ACTIVE" as const, departmentId: whPl?.id ?? null },
-    { employeeCode: "EMP-WH-01",   fullName: "พนักงานพัสดุ ทดสอบ",          role: "REQUESTER" as const, status: "ACTIVE" as const, departmentId: wh?.id   ?? null },
-    { employeeCode: "EMP-PD-01",   fullName: "พนักงานผลิต ทดสอบ",           role: "REQUESTER" as const, status: "ACTIVE" as const, departmentId: pd?.id   ?? null },
-    { employeeCode: "EMP-DISP-01", fullName: "พนักงานจ่ายสินค้า ทดสอบ",     role: "REQUESTER" as const, status: "ACTIVE" as const, departmentId: disp?.id ?? null },
+    { email: "admin@noritake.local",    fullName: "Admin",                  roles: [UserRole.ADMIN],          status: "ACTIVE" as const, departmentId: whPl?.id ?? null },
+    { email: "manager@noritake.local",  fullName: "หัวหน้าคลังพาเลท ทดสอบ",  roles: [UserRole.PALLET_MANAGER], status: "ACTIVE" as const, departmentId: whPl?.id ?? null },
+    { email: "supply1@noritake.local",  fullName: "พนักงานพัสดุ ทดสอบ",      roles: [UserRole.REQUESTER],      status: "ACTIVE" as const, departmentId: wh?.id   ?? null },
+    { email: "produce1@noritake.local", fullName: "พนักงานผลิต ทดสอบ",       roles: [UserRole.REQUESTER],      status: "ACTIVE" as const, departmentId: pd?.id   ?? null },
+    { email: "dispatch1@noritake.local",fullName: "พนักงานจ่ายสินค้า ทดสอบ", roles: [UserRole.REQUESTER],      status: "ACTIVE" as const, departmentId: disp?.id ?? null },
   ];
   for (const u of users) {
-    await prisma.user.upsert({
-      where: { employeeCode: u.employeeCode },
-      update: { fullName: u.fullName, role: u.role, status: u.status, departmentId: u.departmentId },
-      create: u,
-    });
+    const existing = await prisma.user.findUnique({ where: { email: u.email } });
+    if (existing) {
+      await prisma.user.update({
+        where: { email: u.email },
+        data: {
+          fullName: u.fullName,
+          roles: u.roles,
+          status: u.status,
+          departmentId: u.departmentId,
+          // reset password only if not yet set (first seed after migrate reset)
+          ...(existing.passwordHash ? {} : { passwordHash: defaultHash }),
+        },
+      });
+    } else {
+      await prisma.user.create({ data: { ...u, passwordHash: defaultHash } });
+    }
   }
 
   // ---------- Pallet types ----------
   const palletTypes = [
-    { code: "WOOD-STD",     name: "พาเลทไม้มาตรฐาน 100x120", material: "ไม้",     sizeSpec: "100x120x15", minStock: 100 },
-    { code: "WOOD-EURO",    name: "พาเลทไม้ EURO 80x120",    material: "ไม้",     sizeSpec: "80x120x15",  minStock: 50 },
-    { code: "PLASTIC-BLUE", name: "พาเลทพลาสติกน้ำเงิน",     material: "พลาสติก", sizeSpec: "110x110x15", minStock: 80 },
-    { code: "PLASTIC-BLK",  name: "พาเลทพลาสติกดำ",          material: "พลาสติก", sizeSpec: "100x120x15", minStock: 40 },
-    { code: "STEEL-CAGE",   name: "พาเลทเหล็กแบบกรง",        material: "เหล็ก",   sizeSpec: "120x100x100", minStock: 10 },
+    { name: "พาเลทไม้มาตรฐาน 100x120", sizeSpec: "100x120x15"  },
+    { name: "พาเลทไม้ EURO 80x120",    sizeSpec: "80x120x15"   },
+    { name: "พาเลทพลาสติกน้ำเงิน",     sizeSpec: "110x110x15"  },
+    { name: "พาเลทพลาสติกดำ",          sizeSpec: "100x120x15"  },
+    { name: "พาเลทเหล็กแบบกรง",        sizeSpec: "120x100x100" },
   ];
   for (const p of palletTypes) {
-    await prisma.palletType.upsert({ where: { code: p.code }, update: p, create: p });
+    const existing = await prisma.palletType.findFirst({ where: { name: p.name } });
+    if (existing) {
+      await prisma.palletType.update({ where: { id: existing.id }, data: { sizeSpec: p.sizeSpec } });
+    } else {
+      await prisma.palletType.create({ data: p });
+    }
   }
 
-  // ---------- Initial stock (seed as RECEIVE_NEW movements → WH-PL) ----------
+  // ---------- Initial stock ----------
   const whMain = whPl;
   const existingMovements = await prisma.stockMovement.count();
   if (existingMovements === 0 && whMain) {
-    const palletCodes = ["WOOD-STD", "WOOD-EURO", "PLASTIC-BLUE", "PLASTIC-BLK", "STEEL-CAGE"];
-    const qtys: Record<string, number> = {
-      "WOOD-STD": 500,
-      "WOOD-EURO": 200,
-      "PLASTIC-BLUE": 300,
-      "PLASTIC-BLK": 150,
-      "STEEL-CAGE": 30,
+    const palletQtys: Record<string, number> = {
+      "พาเลทไม้มาตรฐาน 100x120": 500,
+      "พาเลทไม้ EURO 80x120":    200,
+      "พาเลทพลาสติกน้ำเงิน":     300,
+      "พาเลทพลาสติกดำ":          150,
+      "พาเลทเหล็กแบบกรง":        30,
     };
-    for (const code of palletCodes) {
-      const pt = await prisma.palletType.findUnique({ where: { code } });
+    for (const [name, qty] of Object.entries(palletQtys)) {
+      const pt = await prisma.palletType.findFirst({ where: { name } });
       if (!pt) continue;
-      await prisma.stockMovement.create({
-        data: {
+      await prisma.$transaction(async (tx) => {
+        await moveStock(tx, {
           palletTypeId: pt.id,
-          condition: "USABLE",
-          quantity: qtys[code] ?? 0,
+          condition: "GOOD",
+          delta: qty,
           toDepartmentId: whMain.id,
           reason: "[SEED] Initial stock",
-        },
+        });
       });
     }
-    console.log(`  ✅ seeded initial stock (${palletCodes.length} lines)`);
+    console.log(`  ✅ seeded initial stock (${Object.keys(palletQtys).length} lines)`);
   } else {
     console.log(`  ⏭  skip initial stock (${existingMovements} movements exist)`);
   }

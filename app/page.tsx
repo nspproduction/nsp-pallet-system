@@ -1,12 +1,11 @@
 import Link from "next/link";
-import { AuthPanel } from "./_components/AuthPanel";
 
 export default function Home() {
   return (
     <main className="relative flex min-h-screen flex-col">
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
         <div className="bg-grid absolute inset-0 opacity-60" />
-        <div className="absolute -top-40 left-1/2 h-[520px] w-[520px] -translate-x-1/2 rounded-full bg-brand-200/50 blur-3xl" />
+        <div className="absolute -top-40 left-1/2 h-130 w-130 -translate-x-1/2 rounded-full bg-brand-200/50 blur-3xl" />
       </div>
 
       <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-6">
@@ -25,25 +24,21 @@ export default function Home() {
         <div className="space-y-5">
           <h1 className="mx-auto max-w-3xl text-4xl font-bold tracking-tight text-slate-900 sm:text-5xl sm:leading-[1.1]">
             ระบบเบิกจ่ายพาเลท
-            <span className="block bg-gradient-to-r from-brand-600 to-brand-900 bg-clip-text text-transparent">ควบคุมทุกใบเบิก ทุกยอดคงเหลือ</span>
+            <span className="block bg-linear-to-r from-brand-600 to-brand-900 bg-clip-text text-transparent">ควบคุมทุกใบเบิก ทุกยอดคงเหลือ</span>
           </h1>
-        </div>
-
-        <div className="w-full max-w-2xl">
-          <AuthPanel devMode={process.env.NODE_ENV !== "production"} />
         </div>
 
         <div className="grid w-full max-w-4xl gap-4 sm:grid-cols-2">
           <PortalCard
-            href="/liff"
+            href="/app"
             eyebrow="สำหรับพนักงาน"
-            title="LIFF บน LINE"
-            description="สร้างคำขอ ตรวจสอบสถานะ และอนุมัติผ่านมือถือได้ทันที"
+            title="พอร์ทัลพนักงาน"
+            description="สร้างคำขอ ตรวจสอบสถานะ และอนุมัติผ่าน web app ได้ทันที"
             icon={<PhoneIcon className="h-6 w-6" />}
             accent="brand"
           />
           <PortalCard
-            href="/admin"
+            href="/manage"
             eyebrow="สำหรับผู้ดูแล"
             title="Admin Console"
             description="Dashboard, จัดการข้อมูลหลัก, รายงาน, Audit log ครบทุกด้าน"
@@ -77,7 +72,7 @@ function PortalCard({
       href={href}
       className={`group relative overflow-hidden rounded-2xl border p-6 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg ${
         isBrand
-          ? "border-brand-200 bg-gradient-to-br from-white to-brand-50 hover:border-brand-500"
+          ? "border-brand-200 bg-linear-to-br from-white to-brand-50 hover:border-brand-500"
           : "border-slate-200 bg-white hover:border-slate-900"
       }`}
     >
@@ -97,18 +92,6 @@ function PortalCard({
         <p className="mt-2 text-sm leading-6 text-slate-600">{description}</p>
       </div>
     </Link>
-  );
-}
-
-function Feature({ icon, title, text }: { icon: React.ReactNode; title: string; text: string }) {
-  return (
-    <div className="flex items-start gap-3 rounded-xl border border-border bg-white/60 p-4 text-left backdrop-blur">
-      <span className="mt-0.5 grid h-6 w-6 place-items-center rounded-full bg-brand-100 text-brand-700">{icon}</span>
-      <div>
-        <p className="text-sm font-semibold text-slate-900">{title}</p>
-        <p className="text-xs text-slate-500">{text}</p>
-      </div>
-    </div>
   );
 }
 
@@ -143,14 +126,6 @@ function ArrowIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <path d="M5 12h14M13 5l7 7-7 7" />
-    </svg>
-  );
-}
-
-function CheckIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
-      <path d="M5 12l5 5L20 7" />
     </svg>
   );
 }

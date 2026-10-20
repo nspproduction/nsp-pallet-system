@@ -2,62 +2,100 @@ import { requireUser } from "@/lib/auth/current-user";
 import { fail, ok } from "@/lib/http/respond";
 import { prisma } from "@/lib/prisma";
 
-// GET /api/balances?departmentId=xxx
-// Returns stock balance aggregated by (palletType × condition × department).
-// Default (no filter): all departments.
+// GET /api/balances?departmentId=xxx&deductPending=1
+// Returns stock balance per (palletType × condition × department).
+// Warehouse rows are sourced from `warehouseStock` (authoritative per CLAUDE.md Rule 1).
+// Non-warehouse dept rows are sourced from `departmentStock` filtered to isWarehouse=false.
 export async function GET(req: Request) {
   try {
     await requireUser();
     const url = new URL(req.url);
     const departmentId = url.searchParams.get("departmentId");
+    const deductPending = url.searchParams.get("deductPending") === "1";
 
-    const [ins, outs] = await Promise.all([
-      prisma.stockMovement.groupBy({
-        by: ["palletTypeId", "condition", "toDepartmentId"],
-        _sum: { quantity: true },
-        where: departmentId ? { toDepartmentId: departmentId } : {},
-      }),
-      prisma.stockMovement.groupBy({
-        by: ["palletTypeId", "condition", "fromDepartmentId"],
-        _sum: { quantity: true },
-        where: departmentId ? { fromDepartmentId: departmentId } : {},
-      }),
+    const warehouseDepts = await prisma.department.findMany({
+      where: { isWarehouse: true },
+      select: { id: true, name: true, isWarehouse: true }
+    });
+    const warehouseIds = new Set(warehouseDepts.map((d) => d.id));
+    const primaryWarehouse = warehouseDepts[0] ?? null;
+
+    const includeWarehouse = !!primaryWarehouse && (!departmentId || warehouseIds.has(departmentId));
+    const includeDepts = !departmentId || !warehouseIds.has(departmentId);
+
+    const [warehouseStocks, deptStocks] = await Promise.all([
+      includeWarehouse ? prisma.warehouseStock.findMany({ include: { palletType: true } }) : Promise.resolve([]),
+      includeDepts
+        ? prisma.departmentStock.findMany({
+            where: {
+              department: { isWarehouse: false },
+              ...(departmentId ? { departmentId } : {})
+            },
+            include: { palletType: true, department: true }
+          })
+        : Promise.resolve([])
     ]);
 
-    const bal = new Map<string, number>();
+    type Row = {
+      palletTypeId: string;
+      condition: string;
+      departmentId: string;
+      quantity: number;
+      palletType: { id: string; name: string } | null;
+      department: { id: string; name: string; isWarehouse: boolean } | null;
+    };
+    const bal = new Map<string, Row>();
     const key = (p: string, c: string, d: string) => `${p}::${c}::${d}`;
-    for (const r of ins) {
-      if (!r.toDepartmentId) continue;
-      const k = key(r.palletTypeId, r.condition, r.toDepartmentId);
-      bal.set(k, (bal.get(k) ?? 0) + (r._sum.quantity ?? 0));
+
+    if (primaryWarehouse) {
+      for (const s of warehouseStocks) {
+        bal.set(key(s.palletTypeId, s.condition, primaryWarehouse.id), {
+          palletTypeId: s.palletTypeId,
+          condition: s.condition,
+          departmentId: primaryWarehouse.id,
+          quantity: s.quantity,
+          palletType: s.palletType,
+          department: primaryWarehouse
+        });
+      }
     }
-    for (const r of outs) {
-      if (!r.fromDepartmentId) continue;
-      const k = key(r.palletTypeId, r.condition, r.fromDepartmentId);
-      bal.set(k, (bal.get(k) ?? 0) - (r._sum.quantity ?? 0));
+
+    for (const r of deptStocks) {
+      bal.set(key(r.palletTypeId, r.condition, r.departmentId), {
+        palletTypeId: r.palletTypeId,
+        condition: r.condition,
+        departmentId: r.departmentId,
+        quantity: r.quantity,
+        palletType: r.palletType,
+        department: r.department
+      });
     }
 
-    const rows = Array.from(bal.entries())
-      .map(([k, quantity]) => {
-        const [palletTypeId, condition, deptId] = k.split("::");
-        return { palletTypeId, condition, departmentId: deptId, quantity };
-      })
-      .filter((r) => r.quantity !== 0);
+    if (deductPending) {
+      const pendingItems = await prisma.requestItem.findMany({
+        where: {
+          request: {
+            type: { in: ["ISSUE", "RETURN"] },
+            status: { in: ["PENDING_DEPT", "PENDING_WAREHOUSE"] },
+            ...(departmentId ? { fromDepartmentId: departmentId } : {})
+          }
+        },
+        select: {
+          palletTypeId: true,
+          quantity: true,
+          request: { select: { fromDepartmentId: true, condition: true } }
+        }
+      });
+      for (const item of pendingItems) {
+        const deptId = item.request.fromDepartmentId;
+        const condition = item.request.condition ?? "GOOD";
+        if (!deptId) continue;
+        const row = bal.get(key(item.palletTypeId, condition, deptId));
+        if (row) row.quantity -= item.quantity;
+      }
+    }
 
-    const [palletTypes, departments] = await Promise.all([
-      prisma.palletType.findMany(),
-      prisma.department.findMany(),
-    ]);
-    const ptMap = new Map(palletTypes.map((p) => [p.id, p]));
-    const deptMap = new Map(departments.map((d) => [d.id, d]));
-
-    return ok(
-      rows.map((r) => ({
-        ...r,
-        palletType: ptMap.get(r.palletTypeId) ?? null,
-        department: deptMap.get(r.departmentId) ?? null,
-      })),
-    );
+    return ok(Array.from(bal.values()).filter((r) => r.quantity !== 0));
   } catch (e) {
     return fail(e);
   }

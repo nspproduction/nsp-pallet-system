@@ -1,15 +1,15 @@
 // Create or update an admin user with a hashed password.
 // Usage:
-//   npm run create-admin -- <employeeCode> <password> [fullName]
+//   npm run create-admin -- <email> <password> [fullName]
 // or:
-//   npx tsx scripts/create-admin.ts <employeeCode> <password> [fullName]
+//   npx tsx scripts/create-admin.ts <email> <password> [fullName]
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../lib/auth/password";
 
 async function main() {
-  const [, , employeeCode, password, fullNameArg] = process.argv;
-  if (!employeeCode || !password) {
-    console.error("Usage: tsx scripts/create-admin.ts <employeeCode> <password> [fullName]");
+  const [, , email, password, fullNameArg] = process.argv;
+  if (!email || !password) {
+    console.error("Usage: tsx scripts/create-admin.ts <email> <password> [fullName]");
     process.exit(1);
   }
   if (password.length < 8) {
@@ -20,29 +20,31 @@ async function main() {
   const prisma = new PrismaClient();
   try {
     const passwordHash = await hashPassword(password);
-    const existing = await prisma.user.findUnique({ where: { employeeCode } });
+    const existing = await prisma.user.findFirst({
+      where: { email: { equals: email.trim(), mode: "insensitive" } },
+    });
     if (existing) {
       const updated = await prisma.user.update({
         where: { id: existing.id },
         data: {
-          role: "ADMIN",
+          roles: ["ADMIN"],
           status: "ACTIVE",
           passwordHash,
           ...(fullNameArg ? { fullName: fullNameArg } : {}),
         },
       });
-      console.log(`Updated admin: ${updated.fullName} (${updated.employeeCode})`);
+      console.log(`Updated admin: ${updated.fullName} (${updated.email})`);
     } else {
       const created = await prisma.user.create({
         data: {
-          employeeCode,
-          fullName: fullNameArg ?? employeeCode,
-          role: "ADMIN",
+          email: email.trim().toLowerCase(),
+          fullName: fullNameArg ?? email,
+          roles: ["ADMIN"],
           status: "ACTIVE",
           passwordHash,
         },
       });
-      console.log(`Created admin: ${created.fullName} (${created.employeeCode})`);
+      console.log(`Created admin: ${created.fullName} (${created.email})`);
     }
   } finally {
     await prisma.$disconnect();

@@ -95,7 +95,7 @@ LINE login (LIFF) → /api/auth/line สร้าง user stub (PENDING, ไม�
   → user กรอก ชื่อ-นามสกุล / เบอร์โทร / แผนก / section (ถ้ามี)
   → /api/auth/register บันทึก, status ยังเป็น PENDING
   → หน้า "กำลังรอการอนุมัติ"
-  → admin ไปที่ /admin/users กด ACTIVE
+  → admin ไปที่ /manage/users กด ACTIVE
   → user เปิด LIFF ครั้งต่อไป → ใช้งานได้ปกติ
 ```
 

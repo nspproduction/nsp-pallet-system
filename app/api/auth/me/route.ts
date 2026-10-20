@@ -9,32 +9,26 @@ export async function GET() {
     user.departmentId
       ? prisma.department.findUnique({
           where: { id: user.departmentId },
-          select: { id: true, code: true, name: true },
+          select: { id: true, name: true, isWarehouse: true },
         })
       : Promise.resolve(null),
     user.sectionId
       ? prisma.departmentSection.findUnique({
           where: { id: user.sectionId },
-          select: { id: true, code: true, name: true },
+          select: { id: true, name: true },
         })
       : Promise.resolve(null),
   ]);
 
-  // needsRegistration: user เพิ่งถูก provision จาก LINE login
-  // แต่ยังไม่ได้กรอกข้อมูลลงทะเบียน (phone / department)
-  const needsRegistration = !user.phone || !user.departmentId;
-
   return Response.json({
     authenticated: true,
-    needsRegistration,
     user: {
       id: user.id,
       fullName: user.fullName,
+      email: user.email,
       phone: user.phone,
-      role: user.role,
+      roles: user.roles,
       status: user.status,
-      lineUserId: user.lineUserId,
-      employeeCode: user.employeeCode,
       departmentId: user.departmentId,
       sectionId: user.sectionId,
       department,

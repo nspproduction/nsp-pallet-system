@@ -5,7 +5,8 @@ import { repairPallets } from "@/lib/services/warehouse";
 
 const Body = z.object({
   palletTypeId: z.string(),
-  quantity: z.coerce.number().int().positive(),
+  repairedQty: z.coerce.number().int().min(0),
+  damagedQty: z.coerce.number().int().min(0),
   note: z.string().max(500).optional(),
 });
 

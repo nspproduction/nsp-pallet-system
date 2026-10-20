@@ -29,7 +29,7 @@ export async function requireUser(): Promise<SessionUser> {
 
 export async function requireRole(...roles: UserRole[]): Promise<SessionUser> {
   const u = await requireUser();
-  if (!roles.includes(u.role)) throw new HttpError(403, "forbidden");
+  if (!u.roles.some(r => roles.includes(r))) throw new HttpError(403, "forbidden");
   return u;
 }
 

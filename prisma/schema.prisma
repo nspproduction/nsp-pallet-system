@@ -1,10 +1,10 @@
 // Pallet dispatch system — Prisma schema
 // Design principles:
-//   1. Bulk counting (no per-unit tracking) but pallet_type × condition × location composes the "SKU".
-//   2. Balance is always derived from stock_movements; never store editable stock numbers.
-//   3. Every movement is (from_location -> to_location). Locations are typed (warehouse / internal / customer / repair / supplier / write_off).
-//   4. Requester and approver must differ (enforced in application layer + audit_logs).
-//   5. Strict internal tracking: production-line "internal" locations accumulate outstanding balance until returned.
+//   1. Bulk counting (no per-unit tracking).
+//   2. Balance maintained in WarehouseStock (snapshot) + StockMovement (ledger). Both updated in one transaction.
+//   3. Every movement has a direction: fromDept (out) / toDept (in).
+//   4. Requester and approver must differ (enforced at service layer).
+//   5. Approval is multi-step; last step is always Pallet Manager (role=PALLET_MANAGER).
 
 generator client {
   provider = "prisma-client-js"
@@ -22,9 +22,10 @@ datasource db {
 
 enum UserRole {
   REQUESTER
-  APPROVER
-  ADMIN
+  DEPT_APPROVER
+  PALLET_MANAGER
   VIEWER
+  ADMIN
 }
 
 enum UserStatus {
@@ -34,18 +35,21 @@ enum UserStatus {
 }
 
 model Department {
-  id        String   @id @default(cuid())
-  code      String   @unique
-  name      String
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  users     User[]
-  sections  DepartmentSection[]
+  id          String   @id @default(cuid())
+  name        String
+  isWarehouse Boolean  @default(false)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
 
-  requestsFrom   Request[]       @relation("RequestFromDept")
-  requestsTo     Request[]       @relation("RequestToDept")
-  movementsFrom  StockMovement[] @relation("MovementFromDept")
-  movementsTo    StockMovement[] @relation("MovementToDept")
+  users          User[]
+  sections       DepartmentSection[]
+  approvalRoutes ApprovalRoute[]
+
+  requestsFrom  Request[]       @relation("RequestFromDept")
+  requestsTo    Request[]       @relation("RequestToDept")
+  movementsFrom    StockMovement[] @relation("MovementFromDept")
+  movementsTo      StockMovement[] @relation("MovementToDept")
+  departmentStocks DepartmentStock[]
 
   @@map("departments")
 }
@@ -53,46 +57,49 @@ model Department {
 model DepartmentSection {
   id           String     @id @default(cuid())
   departmentId String
-  code         String
   name         String
   active       Boolean    @default(true)
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
-  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
-  users        User[]
-  requestsAsRequesterSection Request[] @relation("RequestRequesterSection")
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  users      User[]
+
   requestsFrom               Request[] @relation("RequestFromSection")
   requestsTo                 Request[] @relation("RequestToSection")
   movementsFrom              StockMovement[] @relation("MovementFromSection")
   movementsTo                StockMovement[] @relation("MovementToSection")
 
-  @@unique([departmentId, code])
   @@index([departmentId])
   @@map("department_sections")
 }
 
 model User {
-  id             String       @id @default(cuid())
-  lineUserId     String?      @unique
-  employeeCode   String       @unique
-  fullName       String
-  phone          String?
-  role           UserRole     @default(REQUESTER)
-  status         UserStatus   @default(PENDING)
-  passwordHash   String?      // only set for ADMIN users who log in via username/password
-  departmentId   String?
-  sectionId      String?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  id                  String     @id @default(cuid())
+  email               String     @unique
+  fullName            String
+  phone               String?
+  roles               UserRole[] @default([REQUESTER])
+  status              UserStatus @default(PENDING)
+  passwordHash        String?
+  failedLoginAttempts Int        @default(0)
+  lockedUntil         DateTime?
+  departmentId        String?
+  sectionId           String?
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
 
-  department     Department?        @relation(fields: [departmentId], references: [id])
-  section        DepartmentSection? @relation(fields: [sectionId], references: [id])
-  requests       Request[]    @relation("RequesterRequests")
-  approvals      Approval[]
-  auditLogs      AuditLog[]
+  department          Department?        @relation(fields: [departmentId], references: [id])
+  section             DepartmentSection? @relation(fields: [sectionId], references: [id])
+  requests            Request[]          @relation("RequesterRequests")
+  approvals           Approval[]
+  auditLogs           AuditLog[]
+  revisions           RequestRevision[]
+  passwordResetTokens PasswordResetToken[]
+  warehouseOps        WarehouseOperation[]
+  notifications       Notification[]
 
-  @@index([role, status])
+  @@index([status])
   @@map("users")
 }
 
@@ -101,64 +108,144 @@ model User {
 // =========================================================
 
 enum PalletCondition {
-  USABLE       // ใช้งานได้
-  IN_REPAIR    // ส่งซ่อม
-  UNUSABLE     // ใช้งานไม่ได้ (รอตัดจำหน่าย)
+  GOOD           // ใช้งานได้ (ดี)
+  PENDING_REPAIR // รอซ่อม
+  DAMAGED        // เสีย (รอตัดจำหน่าย)
 }
 
 model PalletType {
-  id           String    @id @default(cuid())
-  code         String    @unique     // e.g. WOOD-STD, PLASTIC-BLUE
-  name         String                // e.g. พาเลทไม้มาตรฐาน
-  material     String?               // ไม้ / พลาสติก / เหล็ก
-  sizeSpec     String?               // e.g. 100x120x15
-  minStock     Int       @default(0) // สำหรับแจ้งเตือน
-  active       Boolean   @default(true)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id          String  @id @default(cuid())
+  name        String  @unique
+  sizeSpec    String?
+  active      Boolean @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  requestItems RequestItem[]
-  movements    StockMovement[]
+  requestItems      RequestItem[]
+  movements         StockMovement[]
+  warehouseStocks   WarehouseStock[]
+  departmentStocks  DepartmentStock[]
+  warehouseOpItems  WarehouseOperationItem[]
 
   @@map("pallet_types")
 }
 
 // =========================================================
-// Requests
+// Warehouse stock snapshot (updated in same tx as StockMovement)
+// =========================================================
+
+model WarehouseStock {
+  palletTypeId String
+  condition    PalletCondition
+  quantity     Int             @default(0)
+
+  palletType   PalletType @relation(fields: [palletTypeId], references: [id])
+
+  @@id([palletTypeId, condition])
+  @@map("warehouse_stock")
+}
+
+// Department-level stock snapshot (updated in same tx as StockMovement)
+// Allows negative (BR-3: return excess is warned, not blocked).
+model DepartmentStock {
+  palletTypeId String
+  condition    PalletCondition
+  departmentId String
+  quantity     Int             @default(0)
+
+  palletType  PalletType @relation(fields: [palletTypeId], references: [id])
+  department  Department @relation(fields: [departmentId], references: [id])
+
+  @@id([palletTypeId, condition, departmentId])
+  @@map("department_stock")
+}
+
+// =========================================================
+// Approval routes (configured per dept × request type)
+// =========================================================
+
+model ApprovalRoute {
+  id           String      @id @default(cuid())
+  departmentId String
+  requestType  RequestType // ISSUE or RETURN
+  isActive     Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  department Department    @relation(fields: [departmentId], references: [id])
+  steps      ApprovalStep[]
+
+  @@unique([departmentId, requestType])
+  @@map("approval_routes")
+}
+
+model ApprovalStep {
+  id          String   @id @default(cuid())
+  routeId     String
+  stepOrder   Int
+  name        String
+  approverIds String[]
+
+  route ApprovalRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
+
+  @@unique([routeId, stepOrder])
+  @@index([routeId])
+  @@map("approval_steps")
+}
+
+// =========================================================
+// Operating hours + holidays
+// =========================================================
+
+model OperatingHours {
+  id        String   @id @default(cuid())
+  dayOfWeek Int      // 0=Sun 1=Mon … 6=Sat
+  startTime String   // "09:00"
+  endTime   String   // "11:30"
+  label     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@map("operating_hours")
+}
+
+model HolidayDate {
+  id        String   @id @default(cuid())
+  date      DateTime @db.Date
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@map("holiday_dates")
+}
+
+// =========================================================
+// Requests (ISSUE / RETURN only — workflow requests)
 // =========================================================
 
 enum RequestType {
-  RECEIVE_NEW        // รับเข้าใหม่ (supplier -> warehouse)
-  ISSUE_INTERNAL     // เบิกใช้ภายใน (warehouse -> internal_area)
-  RETURN_INTERNAL    // คืนจากภายใน (internal_area -> warehouse)
-  TRANSFER_INTERNAL  // โอนย้ายระหว่างแผนกภายใน (internal_area -> internal_area)
-  SHIP_CUSTOMER      // ส่งลูกค้า (warehouse -> customer, ใช้โดยแผนกจ่ายสินค้า)
-  RETURN_CUSTOMER    // รับคืนจากลูกค้า (customer -> warehouse)
-  SEND_REPAIR        // ส่งซ่อม (warehouse -> repair_shop)
-  RECEIVE_REPAIR     // รับคืนจากซ่อม (repair_shop -> warehouse)
-  WRITE_OFF          // ตัดจำหน่าย
-  ADJUSTMENT         // ปรับยอด (admin only)
+  ISSUE  // เบิกออก (SPEC §6)
+  RETURN // คืนเข้า (SPEC §6)
 }
 
 enum RequestStatus {
-  DRAFT           // ร่าง
-  PENDING         // รออนุมัติ
-  APPROVED        // อนุมัติแล้ว (stock เปลี่ยนตอนนี้)
+  DRAFT
+  PENDING_DEPT      // รอ dept-step approver
+  PENDING_WAREHOUSE // รอ Pallet Manager (final step)
+  COMPLETED         // อนุมัติครบ + ยอดเปลี่ยนแล้ว
   REJECTED
   CANCELLED
 }
 
 model Request {
-  id              String         @id @default(cuid())
-  docNo           String         @unique   // PL-OUT-2609-0001
-  type            RequestType
-  status          RequestStatus  @default(PENDING)
+  id     String        @id @default(cuid())
+  docNo  String        @unique
+  type   RequestType
+  status RequestStatus @default(PENDING_DEPT)
 
-  requesterId     String
-  requester       User           @relation("RequesterRequests", fields: [requesterId], references: [id])
+  requesterId String
+  requester   User   @relation("RequesterRequests", fields: [requesterId], references: [id])
 
-  // Dept-based routing (replaces fromLocation/toLocation)
-  // คลังพาเลท = department code "WH-PL"
   fromDepartmentId String?
   fromDepartment   Department?        @relation("RequestFromDept", fields: [fromDepartmentId], references: [id])
   fromSectionId    String?
@@ -168,25 +255,28 @@ model Request {
   toSectionId      String?
   toSection        DepartmentSection? @relation("RequestToSection", fields: [toSectionId], references: [id])
 
-  // snapshot ของ requester.sectionId ตอนสร้างคำขอ (เผื่อ user เปลี่ยน section ภายหลัง)
-  sectionId       String?
-  section         DepartmentSection? @relation("RequestRequesterSection", fields: [sectionId], references: [id])
+  // Condition for this request (1 condition per request — SPEC §6)
+  condition PalletCondition?
 
-  neededDate      DateTime?      // วันที่ต้องการใช้/รับ
-  purpose         String?
-  referenceNo     String?        // PO / DO / เลขอ้างอิงภายนอก
-  note            String?
+  // Multi-step approval state
+  currentStepOrder Int?  // null = at PENDING_WAREHOUSE / completed
+  stepSnapshot     Json? // snapshot of dept steps at submission time
 
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  submittedAt     DateTime?
-  approvedAt      DateTime?
-  cancelledAt     DateTime?
+  neededDate  DateTime?
+  purpose     String?
+  note        String?
 
-  items           RequestItem[]
-  approvals       Approval[]
-  movements       StockMovement[]
-  attachments     Attachment[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  submittedAt DateTime?
+  completedAt DateTime?
+  cancelledAt DateTime?
+
+  items       RequestItem[]
+  approvals   Approval[]
+  movements   StockMovement[]
+  revisions   RequestRevision[]
+  attachments RequestAttachment[]
 
   @@index([status, type])
   @@index([requesterId, status])
@@ -195,31 +285,60 @@ model Request {
 }
 
 model RequestItem {
-  id             String          @id @default(cuid())
-  requestId      String
-  request        Request         @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  id        String  @id @default(cuid())
+  requestId String
+  request   Request @relation(fields: [requestId], references: [id], onDelete: Cascade)
 
-  palletTypeId   String
-  palletType     PalletType      @relation(fields: [palletTypeId], references: [id])
+  palletTypeId String
+  palletType   PalletType @relation(fields: [palletTypeId], references: [id])
 
-  condition      PalletCondition
-  quantity       Int
-  note           String?
+  quantity Int
+  note     String?
 
   @@index([requestId])
   @@map("request_items")
 }
 
+model RequestRevision {
+  id         String   @id @default(cuid())
+  requestId  String
+  editedById String
+  reason     String
+  before     Json
+  after      Json
+  createdAt  DateTime @default(now())
+
+  request  Request @relation(fields: [requestId], references: [id])
+  editedBy User    @relation(fields: [editedById], references: [id])
+
+  @@index([requestId])
+  @@map("request_revisions")
+}
+
+model RequestAttachment {
+  id        String   @id @default(cuid())
+  requestId String
+  request   Request  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  filePath  String
+  mimeType  String   @default("image/jpeg")
+  sizeBytes Int?
+  createdAt DateTime @default(now())
+
+  @@index([requestId])
+  @@map("request_attachments")
+}
+
 model Approval {
-  id           String        @id @default(cuid())
-  requestId    String
-  request      Request       @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  approverId   String
-  approver     User          @relation(fields: [approverId], references: [id])
-  decision     ApprovalDecision
-  comment      String?
-  step         Int           @default(1)  // เผื่ออนุมัติหลายขั้น
-  decidedAt    DateTime      @default(now())
+  id        String           @id @default(cuid())
+  requestId String
+  request   Request          @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  approverId String
+  approver  User             @relation(fields: [approverId], references: [id])
+  decision  ApprovalDecision
+  comment   String?
+  step      Int              @default(1)
+  stepName  String?
+  decidedAt DateTime         @default(now())
 
   @@index([requestId])
   @@map("approvals")
@@ -228,36 +347,70 @@ model Approval {
 enum ApprovalDecision {
   APPROVED
   REJECTED
+  EDIT_APPROVED
 }
 
 // =========================================================
-// Stock ledger (source of truth)
+// Warehouse operations (REPAIR_RESULT, WRITE_OFF, ADJUSTMENT)
+// These bypass approval workflow — Pallet Manager / Admin acts directly
 // =========================================================
 
-// Every increase or decrease in on-hand count for a (palletType, condition, location)
-// bucket is one row here. Balance = SUM(quantity) grouped by (palletType, condition, location).
-// A movement always has fromLocation OR toLocation (or both for transfers).
-// Sign convention: quantity is positive; direction is expressed via from/to locations.
-// - fromLocation only  => stock leaves that location (write-off / lost)
-// - toLocation only    => stock enters (new receive from supplier)
-// - both               => transfer (approved request)
-//
-// Condition changes (e.g. USABLE -> IN_REPAIR at the same warehouse) are modeled
-// as TWO rows sharing the same movementGroupId: an out-row and an in-row
-// with different `condition`. This keeps the invariant that a row has one condition.
+enum WarehouseOpType {
+  REPAIR_RESULT  // บันทึกผลซ่อม
+  WRITE_OFF      // ตัดจำหน่าย
+  ADJUSTMENT     // ปรับยอด
+}
+
+model WarehouseOperation {
+  id          String          @id @default(cuid())
+  docNo       String          @unique
+  type        WarehouseOpType
+  reason      String?
+  createdById String
+  createdBy   User            @relation(fields: [createdById], references: [id])
+  createdAt   DateTime        @default(now())
+
+  opItems   WarehouseOperationItem[]
+  movements StockMovement[]
+
+  @@index([type, createdAt])
+  @@map("warehouse_operations")
+}
+
+model WarehouseOperationItem {
+  id             String           @id @default(cuid())
+  operationId    String
+  operation      WarehouseOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+
+  palletTypeId   String
+  palletType     PalletType       @relation(fields: [palletTypeId], references: [id])
+
+  fromCondition  PalletCondition?
+  toCondition    PalletCondition?
+  quantity       Int
+
+  @@index([operationId])
+  @@map("warehouse_operation_items")
+}
+
+// =========================================================
+// Stock ledger (append-only, source of truth for audit)
+// =========================================================
 
 model StockMovement {
   id              String          @id @default(cuid())
-  movementGroupId String          @default(cuid())  // groups the two legs of a condition change
+  movementGroupId String          @default(cuid())
 
-  requestId       String?
-  request         Request?        @relation(fields: [requestId], references: [id])
+  requestId        String?
+  request          Request?          @relation(fields: [requestId], references: [id])
+  warehouseOpId    String?
+  warehouseOp      WarehouseOperation? @relation(fields: [warehouseOpId], references: [id])
 
-  palletTypeId    String
-  palletType      PalletType      @relation(fields: [palletTypeId], references: [id])
+  palletTypeId String
+  palletType   PalletType      @relation(fields: [palletTypeId], references: [id])
 
-  condition       PalletCondition
-  quantity        Int             // always > 0
+  condition PalletCondition
+  quantity  Int
 
   fromDepartmentId String?
   fromDepartment   Department?        @relation("MovementFromDept", fields: [fromDepartmentId], references: [id])
@@ -268,9 +421,9 @@ model StockMovement {
   toSectionId      String?
   toSection        DepartmentSection? @relation("MovementToSection", fields: [toSectionId], references: [id])
 
-  reason          String?
-  occurredAt      DateTime        @default(now())
-  createdAt       DateTime        @default(now())
+  reason     String?
+  occurredAt DateTime @default(now())
+  createdAt  DateTime @default(now())
 
   @@index([palletTypeId, condition])
   @@index([fromDepartmentId])
@@ -280,61 +433,88 @@ model StockMovement {
 }
 
 // =========================================================
-// Attachments, notifications, audit
+// Email outbox
 // =========================================================
 
-model Attachment {
-  id          String    @id @default(cuid())
-  requestId   String
-  request     Request   @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  filePath    String    // Supabase Storage path
-  fileType    String?
-  fileSize    Int?
-  uploadedBy  String
-  uploadedAt  DateTime  @default(now())
+enum EmailStatus {
+  PENDING
+  SENT
+  FAILED
+}
 
-  @@index([requestId])
-  @@map("attachments")
+model EmailOutbox {
+  id        String      @id @default(cuid())
+  to        String
+  subject   String
+  bodyHtml  String
+  status    EmailStatus @default(PENDING)
+  attempts  Int         @default(0)
+  lastError String?
+  createdAt DateTime    @default(now())
+  sentAt    DateTime?
+
+  @@index([status, createdAt])
+  @@map("email_outbox")
+}
+
+// =========================================================
+// Password reset tokens
+// =========================================================
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+// =========================================================
+// Notifications, audit
+// =========================================================
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  requestId String?
+  subject   String?
+  body      String
+  linkUrl   String?
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@map("notifications")
 }
 
 model AuditLog {
-  id         String    @id @default(cuid())
-  userId     String?
-  user       User?     @relation(fields: [userId], references: [id])
-  entity     String    // e.g. "request", "pallet_type"
-  entityId   String
-  action     String    // create / update / approve / reject / adjust / ...
-  before     Json?
-  after      Json?
-  ipAddress  String?
-  userAgent  String?
-  createdAt  DateTime  @default(now())
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  entity    String
+  entityId  String
+  action    String
+  before    Json?
+  after     Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
 
   @@index([entity, entityId])
   @@index([userId, createdAt])
   @@map("audit_logs")
 }
 
-model Notification {
-  id         String   @id @default(cuid())
-  userId     String
-  channel    String   // "LINE" | "EMAIL"
-  subject    String?
-  body       String
-  linkUrl    String?
-  sentAt     DateTime?
-  error      String?
-  createdAt  DateTime @default(now())
-
-  @@index([userId, createdAt])
-  @@map("notifications")
-}
-
-// Per-(type, yymm) running counter used to build docNo like PL-OUT-2609-0001.
-// Increment via upsert + $transaction to guarantee no duplicates.
 model DocCounter {
-  key       String @id   // "OUT-2609"
-  seq       Int    @default(0)
+  key       String   @id
+  seq       Int      @default(0)
   updatedAt DateTime @updatedAt
 
   @@map("doc_counters")

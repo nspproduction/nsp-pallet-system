@@ -1,17 +1,18 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import type { RequestType } from "@prisma/client";
+import type { RequestType, WarehouseOpType } from "@prisma/client";
+
+type TxClient = Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0];
 
 // Maps request type → short code embedded into docNo (PL-<CODE>-<yymm>-<seq>).
 const TYPE_CODE: Record<RequestType, string> = {
-  RECEIVE_NEW: "IN",
-  ISSUE_INTERNAL: "OUT",
-  RETURN_INTERNAL: "RTN",
-  TRANSFER_INTERNAL: "TRF",
-  SHIP_CUSTOMER: "SHP",
-  RETURN_CUSTOMER: "RCV",
-  SEND_REPAIR: "REP",
-  RECEIVE_REPAIR: "RRP",
+  ISSUE: "ISS",
+  RETURN: "RET",
+};
+
+// Maps warehouse operation type → short code.
+const WO_TYPE_CODE: Record<WarehouseOpType, string> = {
+  REPAIR_RESULT: "REP",
   WRITE_OFF: "WOF",
   ADJUSTMENT: "ADJ",
 };
@@ -24,10 +25,29 @@ function yymm(d = new Date()): string {
 
 // Uses upsert with atomic increment via raw SQL to avoid races.
 // Table doc_counters(key text PK, seq int) is created by migration.
-export async function nextDocNo(type: RequestType, at: Date = new Date()): Promise<string> {
+export async function nextDocNo(type: RequestType, at: Date = new Date(), tx?: TxClient): Promise<string> {
   const code = TYPE_CODE[type];
   const period = yymm(at);
   const key = `${code}-${period}`;
+  const db = tx ?? prisma;
+
+  const rows = await db.$queryRaw<{ seq: number }[]>(Prisma.sql`
+    INSERT INTO doc_counters ("key", seq, "updatedAt")
+    VALUES (${key}, 1, NOW())
+    ON CONFLICT ("key") DO UPDATE
+      SET seq = doc_counters.seq + 1,
+          "updatedAt" = NOW()
+    RETURNING seq
+  `);
+  const seq = rows[0]?.seq ?? 1;
+
+  return `PL-${code}-${period}-${String(seq).padStart(4, "0")}`;
+}
+
+export async function nextWarehouseOpDocNo(type: WarehouseOpType, at: Date = new Date()): Promise<string> {
+  const code = WO_TYPE_CODE[type];
+  const period = yymm(at);
+  const key = `WO-${code}-${period}`;
 
   const rows = await prisma.$queryRaw<{ seq: number }[]>(Prisma.sql`
     INSERT INTO doc_counters ("key", seq, "updatedAt")
@@ -39,5 +59,5 @@ export async function nextDocNo(type: RequestType, at: Date = new Date()): Promi
   `);
   const seq = rows[0]?.seq ?? 1;
 
-  return `PL-${code}-${period}-${String(seq).padStart(4, "0")}`;
+  return `WO-${code}-${period}-${String(seq).padStart(4, "0")}`;
 }

@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 
 const Body = z.object({
   palletTypeId: z.string(),
-  condition: z.enum(["USABLE", "IN_REPAIR", "UNUSABLE"]),
+  condition: z.enum(["GOOD", "PENDING_REPAIR", "DAMAGED"]),
   fromDepartmentId: z.string().optional().nullable(),
   toDepartmentId: z.string().optional().nullable(),
   quantity: z.coerce.number().int().positive(),
@@ -19,9 +19,9 @@ export async function GET() {
     const list = await prisma.stockMovement.findMany({
       where: { reason: { startsWith: "[ADJUST]" } },
       include: {
-        palletType: { select: { code: true, name: true } },
-        fromDepartment: { select: { code: true, name: true } },
-        toDepartment: { select: { code: true, name: true } },
+        palletType: { select: { id: true, name: true } },
+        fromDepartment: { select: { name: true } },
+        toDepartment: { select: { name: true } },
       },
       orderBy: { occurredAt: "desc" },
       take: 100,

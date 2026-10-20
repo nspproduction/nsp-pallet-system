@@ -76,6 +76,20 @@ h4 {
   mask-image: radial-gradient(ellipse at center, black 40%, transparent 75%);
 }
 
+/* Pointer cursor on all interactive elements */
+button:not(:disabled),
+[role="button"]:not(:disabled),
+a[href],
+label[for],
+select:not(:disabled) {
+  cursor: pointer;
+}
+
+button:disabled,
+[role="button"]:disabled {
+  cursor: not-allowed;
+}
+
 /* Focus ring polish */
 :where(a, button, input, select, textarea):focus-visible {
   outline: 2px solid var(--color-brand-600);

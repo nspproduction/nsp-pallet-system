@@ -1,84 +1,48 @@
-import { createClient } from "@supabase/supabase-js";
 import { prisma } from "@/lib/prisma";
-import { HttpError } from "@/lib/auth/current-user";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
-const BUCKET = "attachments";
-const MAX_ATTACHMENTS_PER_REQUEST = 5;
-const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB
+const BUCKET = "request-attachments";
+const SIGNED_URL_TTL = 60 * 60; // 1 hour
 
-function svc() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new HttpError(500, "Supabase env not set");
-  return createClient(url, key, { auth: { persistSession: false } });
+function extFor(mimeType: string) {
+  if (mimeType.includes("png")) return "png";
+  if (mimeType.includes("gif")) return "gif";
+  if (mimeType.includes("webp")) return "webp";
+  return "jpg";
 }
 
-// Returns a signed upload URL that the browser can PUT to.
-// Frontend flow:
-//   1) POST /api/attachments/upload-url  → { path, token, signedUrl }
-//   2) browser PUTs file to signedUrl with header: x-upsert:false
-//   3) POST /api/attachments  { requestId, path, fileType, fileSize } → creates Attachment row
-export async function createUploadUrl(params: {
-  requestId: string;
-  filename: string;
-  userId: string;
-}) {
-  const safeName = params.filename.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const path = `requests/${params.requestId}/${Date.now()}-${safeName}`;
-  const supa = svc();
-  const { data, error } = await supa.storage.from(BUCKET).createSignedUploadUrl(path);
-  if (error) throw new HttpError(500, `signed url: ${error.message}`);
-  return { path, token: data.token, signedUrl: data.signedUrl };
-}
+export async function uploadAttachment(
+  requestId: string,
+  buffer: Buffer,
+  mimeType: string,
+  sizeBytes: number,
+): Promise<{ id: string; filePath: string }> {
+  const fileKey = crypto.randomUUID().replace(/-/g, "");
+  const filePath = `requests/${requestId}/${fileKey}.${extFor(mimeType)}`;
 
-export async function registerAttachment(params: {
-  requestId: string;
-  userId: string;
-  path: string;
-  fileType?: string;
-  fileSize?: number;
-}) {
-  const req = await prisma.request.findUnique({ where: { id: params.requestId } });
-  if (!req) throw new HttpError(404, "request ไม่พบ");
-  if (req.requesterId !== params.userId) {
-    throw new HttpError(403, "แนบไฟล์ได้เฉพาะคำขอของตัวเอง");
-  }
-  if (req.status !== "PENDING") {
-    throw new HttpError(400, "แนบไฟล์ได้เฉพาะคำขอที่ยังรออนุมัติ");
-  }
-  if (params.fileType && !params.fileType.startsWith("image/")) {
-    throw new HttpError(400, "รับเฉพาะไฟล์รูปภาพ");
-  }
-  if (params.fileSize && params.fileSize > MAX_ATTACHMENT_BYTES) {
-    throw new HttpError(400, "ไฟล์ขนาดเกิน 10 MB");
-  }
-  const existing = await prisma.attachment.count({ where: { requestId: params.requestId } });
-  if (existing >= MAX_ATTACHMENTS_PER_REQUEST) {
-    throw new HttpError(400, `แนบรูปได้สูงสุด ${MAX_ATTACHMENTS_PER_REQUEST} รูป`);
-  }
-  return prisma.attachment.create({
-    data: {
-      requestId: params.requestId,
-      filePath: params.path,
-      fileType: params.fileType ?? null,
-      fileSize: params.fileSize ?? null,
-      uploadedBy: params.userId,
-    },
+  const supabase = createSupabaseAdminClient();
+  const { error } = await supabase.storage
+    .from(BUCKET)
+    .upload(filePath, buffer, { contentType: mimeType, upsert: false });
+
+  if (error) throw new Error(`Storage upload failed: ${error.message}`);
+
+  const att = await prisma.requestAttachment.create({
+    data: { requestId, filePath, mimeType, sizeBytes },
   });
+
+  return { id: att.id, filePath };
 }
 
-// Signed URL for viewing (short-lived).
-export async function getViewUrl(path: string): Promise<string> {
-  const supa = svc();
-  const { data, error } = await supa.storage.from(BUCKET).createSignedUrl(path, 60 * 10);
-  if (error) throw new HttpError(500, `view url: ${error.message}`);
+export async function getAttachmentViewUrl(attachmentId: string): Promise<string | null> {
+  const att = await prisma.requestAttachment.findUnique({ where: { id: attachmentId } });
+  if (!att) return null;
+
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase.storage
+    .from(BUCKET)
+    .createSignedUrl(att.filePath, SIGNED_URL_TTL);
+
+  if (error || !data) return null;
   return data.signedUrl;
-}
-
-export async function deleteAttachment(attachmentId: string) {
-  const a = await prisma.attachment.findUnique({ where: { id: attachmentId } });
-  if (!a) throw new HttpError(404, "attachment ไม่พบ");
-  const supa = svc();
-  await supa.storage.from(BUCKET).remove([a.filePath]);
-  await prisma.attachment.delete({ where: { id: attachmentId } });
 }

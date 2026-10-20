@@ -1,0 +1,319 @@
+"use client";
+
+import { useState } from "react";
+import { twMerge } from "tailwind-merge";
+import { ConfirmDialog } from "@/app/_components/dialogs";
+
+interface Department { id: string; name: string }
+interface Approver { id: string; fullName: string; departmentId: string | null }
+interface StepData { stepOrder: number; name: string; approverIds: string[] }
+interface RouteData {
+  id: string;
+  departmentId: string;
+  requestType: string;
+  isActive: boolean;
+  department: Department;
+  steps: StepData[];
+}
+
+const TYPE_LABEL: Record<string, string> = {
+  ISSUE: "เบิกออก",
+  RETURN: "คืนเข้า",
+};
+
+export function ApprovalRoutesClient({
+  routes: initial,
+  departments,
+  approvers,
+}: {
+  routes: RouteData[];
+  departments: Department[];
+  approvers: Approver[];
+}) {
+  const [routes, setRoutes] = useState<RouteData[]>(initial);
+  const [editing, setEditing] = useState<RouteData | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+
+  async function reload() {
+    const res = await fetch("/api/approval-routes");
+    if (res.ok) setRoutes(await res.json());
+  }
+
+  async function save(data: { departmentId: string; requestType: string; steps: StepData[] }) {
+    setBusy(true); setErr(null);
+    const res = await fetch("/api/approval-routes", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    setBusy(false);
+    if (!res.ok) { setErr((await res.json().catch(() => ({}))).error ?? "บันทึกไม่สำเร็จ"); return; }
+    setShowForm(false); setEditing(null);
+    await reload();
+  }
+
+  async function remove(id: string) {
+    await fetch(`/api/approval-routes/${id}`, { method: "DELETE" });
+    await reload();
+  }
+
+  return (
+    <>
+    {confirmDelete && (
+      <ConfirmDialog
+        message="ต้องการลบ approval route นี้?"
+        confirmLabel="ลบ"
+        danger
+        onConfirm={() => { remove(confirmDelete); setConfirmDelete(null); }}
+        onCancel={() => setConfirmDelete(null)}
+      />
+    )}
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <button
+          onClick={() => { setEditing(null); setShowForm(true); setErr(null); }}
+          className="h-9 rounded-lg bg-brand-600 px-4 text-sm font-medium text-white shadow-sm hover:bg-brand-700"
+        >
+          + เพิ่ม Route
+        </button>
+      </div>
+
+      {err && <p className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{err}</p>}
+
+      {routes.length === 0 && (
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-10 text-center text-sm text-slate-500">
+          ยังไม่มี approval route — กด &quot;+ เพิ่ม Route&quot; เพื่อเริ่มต้น
+        </div>
+      )}
+
+      <div className="grid gap-4 md:grid-cols-2">
+        {routes.map((r) => (
+          <div key={r.id} className="rounded-2xl border border-border bg-white p-5 shadow-sm">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <p className="mt-0.5 font-semibold text-slate-900">{r.department.name}</p>
+                <span className="mt-1 inline-block rounded-full bg-brand-100 px-2.5 py-0.5 text-[11px] font-medium text-brand-700">
+                  {TYPE_LABEL[r.requestType] ?? r.requestType}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setEditing(r); setShowForm(true); setErr(null); }}
+                  className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50"
+                >
+                  แก้ไข
+                </button>
+                <button
+                  onClick={() => setConfirmDelete(r.id)}
+                  className="rounded-lg border border-rose-200 px-2.5 py-1 text-xs text-rose-600 hover:bg-rose-50"
+                >
+                  ลบ
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-2">
+              {r.steps.map((s) => (
+                <div key={s.stepOrder} className="flex items-start gap-3 rounded-lg bg-slate-50 px-3 py-2">
+                  <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-brand-600 text-[10px] font-bold text-white">
+                    {s.stepOrder}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-800">{s.name}</p>
+                    <p className="mt-0.5 text-[11px] text-slate-500">
+                      {s.approverIds.length} คน ·{" "}
+                      {s.approverIds
+                        .map((id) => approvers.find((a) => a.id === id)?.fullName ?? id)
+                        .join(", ")}
+                    </p>
+                  </div>
+                </div>
+              ))}
+              <div className="flex items-center gap-3 rounded-lg border border-dashed border-slate-200 px-3 py-2">
+                <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-500">
+                  {r.steps.length + 1}
+                </span>
+                <p className="text-sm text-slate-400">คลังพาเลท (ขั้นสุดท้าย — อัตโนมัติ)</p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {showForm && (
+        <RouteFormModal
+          initial={editing}
+          departments={departments}
+          approvers={approvers}
+          busy={busy}
+          onSave={save}
+          onClose={() => { setShowForm(false); setEditing(null); setErr(null); }}
+        />
+      )}
+    </div>
+    </>
+  );
+}
+
+// -----------------------------------------------------------------------
+// Route form modal
+// -----------------------------------------------------------------------
+
+function RouteFormModal({
+  initial,
+  departments,
+  approvers,
+  busy,
+  onSave,
+  onClose,
+}: {
+  initial: RouteData | null;
+  departments: Department[];
+  approvers: Approver[];
+  busy: boolean;
+  onSave: (data: { departmentId: string; requestType: string; steps: StepData[] }) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [departmentId, setDepartmentId] = useState(initial?.departmentId ?? "");
+  const [requestType, setRequestType] = useState(initial?.requestType ?? "ISSUE");
+  const [steps, setSteps] = useState<StepData[]>(
+    initial?.steps.length
+      ? initial.steps
+      : [{ stepOrder: 1, name: "หัวหน้าแผนก", approverIds: [] }],
+  );
+
+  function addStep() {
+    setSteps([...steps, { stepOrder: steps.length + 1, name: "", approverIds: [] }]);
+  }
+  function removeStep(i: number) {
+    const next = steps.filter((_, idx) => idx !== i).map((s, idx) => ({ ...s, stepOrder: idx + 1 }));
+    setSteps(next);
+  }
+  function updateStep(i: number, patch: Partial<StepData>) {
+    setSteps(steps.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
+  }
+  function toggleApprover(stepIdx: number, userId: string) {
+    const step = steps[stepIdx];
+    const next = step.approverIds.includes(userId)
+      ? step.approverIds.filter((id) => id !== userId)
+      : [...step.approverIds, userId];
+    updateStep(stepIdx, { approverIds: next });
+  }
+
+  const deptApprovers = approvers.filter((a) => a.departmentId === departmentId);
+  const INPUT = "h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-brand-500";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 p-4 md:items-center">
+      <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <h2 className="font-semibold text-slate-900">{initial ? "แก้ไข Route" : "เพิ่ม Route ใหม่"}</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">✕</button>
+        </div>
+
+        <div className="max-h-[70vh] space-y-4 overflow-y-auto p-5">
+          <label className="block">
+            <span className="text-xs font-medium text-slate-600">แผนก</span>
+            <select
+              value={departmentId}
+              onChange={(e) => {
+                setDepartmentId(e.target.value);
+                setSteps((prev) => prev.map((s) => ({ ...s, approverIds: [] })));
+              }}
+              className={twMerge(INPUT, "mt-1")}
+            >
+              <option value="">- เลือกแผนก -</option>
+              {departments.map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="text-xs font-medium text-slate-600">ประเภทคำขอ</span>
+            <select value={requestType} onChange={(e) => setRequestType(e.target.value)} className={twMerge(INPUT, "mt-1")}>
+              <option value="ISSUE">เบิกออก</option>
+              <option value="RETURN">คืนเข้า</option>
+            </select>
+          </label>
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium text-slate-600">ขั้นการอนุมัติ</p>
+              <button onClick={addStep} className="text-xs font-semibold text-brand-700">+ เพิ่มขั้น</button>
+            </div>
+
+            {steps.map((step, i) => (
+              <div key={i} className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/50 p-3">
+                <div className="flex items-center gap-2">
+                  <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand-600 text-xs font-bold text-white">
+                    {step.stepOrder}
+                  </span>
+                  <input
+                    value={step.name}
+                    onChange={(e) => updateStep(i, { name: e.target.value })}
+                    placeholder="ชื่อขั้น เช่น หัวหน้าแผนก"
+                    className="h-8 flex-1 rounded-lg border border-slate-200 bg-white px-2 text-sm outline-none focus:border-brand-500"
+                  />
+                  {steps.length > 1 && (
+                    <button onClick={() => removeStep(i)} className="text-xs text-rose-500">ลบ</button>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-500">ผู้อนุมัติ (เลือกได้หลายคน — ใครก็ได้ 1 คนอนุมัติผ่าน)</p>
+                <div className="flex flex-wrap gap-2">
+                  {!departmentId && (
+                    <p className="text-[11px] text-slate-400">เลือกแผนกก่อนเพื่อดูรายชื่อผู้อนุมัติ</p>
+                  )}
+                  {departmentId && deptApprovers.length === 0 && (
+                    <p className="text-[11px] text-amber-600">ไม่มีผู้ใช้ role DEPT_APPROVER ในแผนกนี้ — กรุณาตั้งค่า role ก่อน</p>
+                  )}
+                  {deptApprovers.map((a) => (
+                    <button
+                      key={a.id}
+                      type="button"
+                      onClick={() => toggleApprover(i, a.id)}
+                      className={twMerge(
+                        "rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition",
+                        step.approverIds.includes(a.id)
+                          ? "border-brand-500 bg-brand-50 text-brand-700"
+                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                      )}
+                    >
+                      {a.fullName}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            <div className="flex items-center gap-2 rounded-xl border border-dashed border-slate-200 p-3 text-sm text-slate-400">
+              <span className="grid h-6 w-6 place-items-center rounded-full bg-slate-100 text-xs font-bold text-slate-400">
+                {steps.length + 1}
+              </span>
+              คลังพาเลท (ขั้นสุดท้าย — อัตโนมัติ)
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-3 border-t border-border px-5 py-4">
+          <button
+            onClick={onClose}
+            className="h-10 flex-1 rounded-xl border border-slate-200 text-sm font-medium text-slate-700"
+          >
+            ยกเลิก
+          </button>
+          <button
+            onClick={() => onSave({ departmentId, requestType, steps })}
+            disabled={busy || !departmentId}
+            className="h-10 flex-1 rounded-xl bg-brand-600 text-sm font-semibold text-white disabled:opacity-50"
+          >
+            {busy ? "กำลังบันทึก..." : "บันทึก"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

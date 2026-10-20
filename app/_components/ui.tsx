@@ -8,20 +8,11 @@ export function Skeleton({ className }: { className?: string }) {
   return <div className={twMerge("animate-pulse rounded-md bg-slate-200/70", className)} />;
 }
 
-export function SkeletonText({
-  lines = 3,
-  className,
-}: {
-  lines?: number;
-  className?: string;
-}) {
+export function SkeletonText({ lines = 3, className }: { lines?: number; className?: string }) {
   return (
     <div className={twMerge("space-y-2", className)}>
       {Array.from({ length: lines }).map((_, i) => (
-        <Skeleton
-          key={i}
-          className={twMerge("h-3", i === lines - 1 ? "w-3/5" : "w-full")}
-        />
+        <Skeleton key={i} className={twMerge("h-3", i === lines - 1 ? "w-3/5" : "w-full")} />
       ))}
     </div>
   );
@@ -53,16 +44,7 @@ export function SkeletonRow({ cols = 4 }: { cols?: number }) {
   );
 }
 
-
-export function PageHeader({
-  title,
-  subtitle,
-  actions,
-}: {
-  title: string;
-  subtitle?: string;
-  actions?: ReactNode;
-}) {
+export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: ReactNode }) {
   return (
     <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div>
@@ -75,32 +57,44 @@ export function PageHeader({
 }
 
 export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return (
-    <div className={`rounded-2xl border border-border bg-white p-6 shadow-sm ${className}`}>
-      {children}
-    </div>
-  );
+  return <div className={`rounded-2xl border border-border bg-white p-6 shadow-sm ${className}`}>{children}</div>;
 }
 
+const STATUS_LABEL: Record<string, string> = {
+  DRAFT: "ร่าง",
+  PENDING: "รอการอนุมัติ",
+  PENDING_DEPT: "รอผู้อนุมัติแผนก",
+  PENDING_WAREHOUSE: "รออนุมัติพาเลท",
+  APPROVED: "อนุมัติแล้ว",
+  COMPLETED: "อนุมัติ",
+  REJECTED: "ปฏิเสธ",
+  CANCELLED: "ยกเลิก",
+  ACTIVE: "ใช้งานได้",
+  DISABLED: "ระงับการใช้งาน",
+  GOOD: "สภาพดี",
+  PENDING_REPAIR: "รอซ่อม",
+  DAMAGED: "เสียหาย"
+};
+
+const STATUS_CLS: Record<string, string> = {
+  DRAFT: "bg-slate-100 text-slate-700",
+  PENDING: "bg-amber-100 text-amber-800",
+  PENDING_DEPT: "bg-amber-100 text-amber-800",
+  PENDING_WAREHOUSE: "bg-amber-100 text-amber-800",
+  APPROVED: "bg-emerald-100 text-emerald-800",
+  COMPLETED: "bg-emerald-100 text-emerald-800",
+  REJECTED: "bg-rose-100 text-rose-800",
+  CANCELLED: "bg-slate-200 text-slate-600",
+  ACTIVE: "bg-emerald-100 text-emerald-800",
+  DISABLED: "bg-rose-100 text-rose-800",
+  GOOD: "bg-emerald-100 text-emerald-800",
+  PENDING_REPAIR: "bg-amber-100 text-amber-800",
+  DAMAGED: "bg-rose-100 text-rose-800"
+};
+
 export function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    DRAFT: "bg-slate-100 text-slate-700",
-    PENDING: "bg-amber-100 text-amber-800",
-    APPROVED: "bg-emerald-100 text-emerald-800",
-    REJECTED: "bg-rose-100 text-rose-800",
-    CANCELLED: "bg-slate-200 text-slate-600",
-    ACTIVE: "bg-emerald-100 text-emerald-800",
-    DISABLED: "bg-rose-100 text-rose-800",
-    USABLE: "bg-emerald-100 text-emerald-800",
-    IN_REPAIR: "bg-amber-100 text-amber-800",
-    UNUSABLE: "bg-rose-100 text-rose-800",
-  };
-  const cls = map[status] ?? "bg-slate-100 text-slate-700";
-  return (
-    <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${cls}`}>
-      {status}
-    </span>
-  );
+  const cls = STATUS_CLS[status] ?? "bg-slate-100 text-slate-700";
+  return <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${cls}`}>{STATUS_LABEL[status] ?? status}</span>;
 }
 
 export function EmptyState({ title, subtitle }: { title: string; subtitle?: string }) {
@@ -112,23 +106,14 @@ export function EmptyState({ title, subtitle }: { title: string; subtitle?: stri
   );
 }
 
-export function Table({
-  head,
-  children,
-}: {
-  head: ReactNode[];
-  children: ReactNode;
-}) {
+export function Table({ head, children }: { head: ReactNode[]; children: ReactNode }) {
   return (
     <div className="overflow-x-auto rounded-xl border border-border">
       <table className="min-w-full divide-y divide-slate-100 text-sm">
         <thead className="bg-slate-50">
           <tr>
             {head.map((h, i) => (
-              <th
-                key={i}
-                className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-widest text-slate-500"
-              >
+              <th key={i} className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-widest text-slate-500">
                 {h}
               </th>
             ))}

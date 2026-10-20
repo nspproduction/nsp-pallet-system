@@ -1,15 +1,13 @@
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/auth/current-user";
+import { HttpError, requireRole } from "@/lib/auth/current-user";
 import { fail, ok, readJson } from "@/lib/http/respond";
 import { writeAudit } from "@/lib/services/audit";
 
 const Patch = z.object({
-  code: z.string().min(1).max(40).optional(),
   name: z.string().min(1).max(120).optional(),
-  material: z.string().max(60).optional().nullable(),
   sizeSpec: z.string().max(60).optional().nullable(),
-  minStock: z.coerce.number().int().min(0).optional(),
   active: z.boolean().optional(),
 });
 
@@ -19,9 +17,16 @@ export async function PATCH(req: Request, ctx: RouteContext<"/api/pallet-types/[
     const { id } = await ctx.params;
     const data = Patch.parse(await readJson(req));
     const before = await prisma.palletType.findUnique({ where: { id } });
-    const updated = await prisma.palletType.update({ where: { id }, data });
-    await writeAudit({ userId: user.id, entity: "pallet_type", entityId: id, action: "update", before, after: updated });
-    return ok(updated);
+    try {
+      const updated = await prisma.palletType.update({ where: { id }, data });
+      await writeAudit({ userId: user.id, entity: "pallet_type", entityId: id, action: "update", before, after: updated });
+      return ok(updated);
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+        throw new HttpError(400, "ชื่อประเภทพาเลทนี้มีอยู่แล้ว");
+      }
+      throw e;
+    }
   } catch (e) {
     return fail(e);
   }

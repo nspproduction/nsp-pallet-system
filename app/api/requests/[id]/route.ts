@@ -1,15 +1,15 @@
 import { requireUser } from "@/lib/auth/current-user";
 import { fail, ok, readJson } from "@/lib/http/respond";
-import { cancelRequest, getRequestDetail } from "@/lib/services/request";
+import { cancelRequest, getRequestDetail, getRequestWarnings } from "@/lib/services/request";
 import { z } from "zod";
 
 export async function GET(_: Request, ctx: RouteContext<"/api/requests/[id]">) {
   try {
     await requireUser();
     const { id } = await ctx.params;
-    const r = await getRequestDetail(id);
+    const [r, warnings] = await Promise.all([getRequestDetail(id), getRequestWarnings(id)]);
     if (!r) return Response.json({ error: "not_found" }, { status: 404 });
-    return ok(r);
+    return ok({ ...r, warnings });
   } catch (e) {
     return fail(e);
   }

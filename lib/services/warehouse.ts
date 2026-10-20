@@ -4,166 +4,169 @@ import { prisma } from "@/lib/prisma";
 import { HttpError } from "@/lib/auth/current-user";
 import type { SessionUser } from "@/lib/auth/current-user";
 import { writeAudit } from "@/lib/services/audit";
-
-const WAREHOUSE_DEPT_CODE = "WH-PL";
+import { moveStock } from "@/lib/server/stock";
+import { nextWarehouseOpDocNo } from "@/lib/services/docno";
 
 async function getWarehouse() {
-  const d = await prisma.department.findUnique({ where: { code: WAREHOUSE_DEPT_CODE } });
-  if (!d || !d.active) throw new HttpError(500, `ยังไม่ได้ตั้งค่าแผนกคลังพาเลท (${WAREHOUSE_DEPT_CODE})`);
+  const d = await prisma.department.findFirst({ where: { isWarehouse: true } });
+  if (!d || !d.active) throw new HttpError(500, "ยังไม่ได้ตั้งค่าแผนกคลังพาเลท (isWarehouse = true)");
   return d;
 }
 
-function requireApprover(user: SessionUser) {
-  if (!["APPROVER", "ADMIN"].includes(user.role)) {
-    throw new HttpError(403, "เฉพาะผู้อนุมัติเท่านั้น");
+function requirePalletManager(user: SessionUser) {
+  if (!user.roles.some((r) => ["PALLET_MANAGER", "ADMIN"].includes(r))) {
+    throw new HttpError(403, "เฉพาะ Pallet Manager หรือ Admin เท่านั้น");
   }
 }
 
-async function getPhysicalBalance(
-  departmentId: string,
-  palletTypeId: string,
-  condition: PalletCondition,
-): Promise<number> {
-  const [ins, outs] = await Promise.all([
-    prisma.stockMovement.aggregate({
-      _sum: { quantity: true },
-      where: { toDepartmentId: departmentId, palletTypeId, condition },
-    }),
-    prisma.stockMovement.aggregate({
-      _sum: { quantity: true },
-      where: { fromDepartmentId: departmentId, palletTypeId, condition },
-    }),
-  ]);
-  return (ins._sum.quantity ?? 0) - (outs._sum.quantity ?? 0);
-}
+// ─── Repair result ────────────────────────────────────────────────────────────
+// PENDING_REPAIR → GOOD (repaired) and/or DAMAGED (beyond repair)
+export async function repairPallets(user: SessionUser, input: { palletTypeId: string; repairedQty: number; damagedQty: number; note?: string }) {
+  requirePalletManager(user);
+  const total = (input.repairedQty ?? 0) + (input.damagedQty ?? 0);
+  if (total <= 0) throw new HttpError(400, "ต้องระบุจำนวนซ่อมได้หรือซ่อมไม่ได้อย่างน้อย 1");
+  if (input.repairedQty < 0 || input.damagedQty < 0) throw new HttpError(400, "จำนวนต้อง ≥ 0");
 
-// Repair: convert IN_REPAIR pallets into USABLE at the warehouse (in-place).
-// Modelled as a pair of movements sharing movementGroupId:
-//   - OUT: condition=IN_REPAIR, from=warehouse → removes from IN_REPAIR bucket
-//   - IN : condition=USABLE,   to=warehouse  → adds to USABLE bucket
-export async function repairPallets(
-  user: SessionUser,
-  input: { palletTypeId: string; quantity: number; note?: string },
-) {
-  requireApprover(user);
-  if (input.quantity <= 0) throw new HttpError(400, "quantity ต้อง > 0");
   const warehouse = await getWarehouse();
-  const avail = await getPhysicalBalance(warehouse.id, input.palletTypeId, "IN_REPAIR");
-  if (avail < input.quantity) {
-    throw new HttpError(400, `ยอดรอซ่อมไม่พอ (มี ${avail}, ขอ ${input.quantity})`);
-  }
-
   const groupId = randomUUID();
+  const docNo = await nextWarehouseOpDocNo("REPAIR_RESULT");
   const reason = `[REPAIR]${input.note ? ` ${input.note}` : ""}`;
   const now = new Date();
 
-  const [outMovement, inMovement] = await prisma.$transaction([
-    prisma.stockMovement.create({
-      data: {
-        movementGroupId: groupId,
+  await prisma.$transaction(async (tx) => {
+    // Create WarehouseOperation header
+    await tx.warehouseOperation.create({
+      data: { id: groupId, docNo, type: "REPAIR_RESULT", reason, createdById: user.id, createdAt: now }
+    });
+
+    // PENDING_REPAIR out (conditional — throws if insufficient)
+    await moveStock(tx, {
+      palletTypeId: input.palletTypeId,
+      condition: "PENDING_REPAIR",
+      delta: -total,
+      fromDepartmentId: warehouse.id,
+      warehouseOpId: groupId,
+      movementGroupId: groupId,
+      reason,
+      occurredAt: now
+    });
+
+    if (input.repairedQty > 0) {
+      await moveStock(tx, {
         palletTypeId: input.palletTypeId,
-        condition: "IN_REPAIR",
-        quantity: input.quantity,
-        fromDepartmentId: warehouse.id,
-        reason,
-        occurredAt: now,
-      },
-    }),
-    prisma.stockMovement.create({
-      data: {
-        movementGroupId: groupId,
-        palletTypeId: input.palletTypeId,
-        condition: "USABLE",
-        quantity: input.quantity,
+        condition: "GOOD",
+        delta: input.repairedQty,
         toDepartmentId: warehouse.id,
+        warehouseOpId: groupId,
+        movementGroupId: groupId,
         reason,
-        occurredAt: now,
-      },
-    }),
-  ]);
+        occurredAt: now
+      });
+    }
+    if (input.damagedQty > 0) {
+      await moveStock(tx, {
+        palletTypeId: input.palletTypeId,
+        condition: "DAMAGED",
+        delta: input.damagedQty,
+        toDepartmentId: warehouse.id,
+        warehouseOpId: groupId,
+        movementGroupId: groupId,
+        reason,
+        occurredAt: now
+      });
+    }
+  });
 
   await writeAudit({
     userId: user.id,
-    entity: "stock_movement",
+    entity: "warehouse_operation",
     entityId: groupId,
     action: "repair",
-    after: { ...input, movementGroupId: groupId },
+    after: { ...input, total, warehouseOpId: groupId }
   });
 
-  return { movementGroupId: groupId, out: outMovement, in: inMovement };
+  return { warehouseOpId: groupId, total, repairedQty: input.repairedQty, damagedQty: input.damagedQty };
 }
 
-// Write off: remove pallets from the warehouse without a destination.
-// Default condition is UNUSABLE but any is allowed (approver's judgement).
+// ─── Write off ────────────────────────────────────────────────────────────────
 export async function writeOffPallets(
   user: SessionUser,
-  input: {
-    palletTypeId: string;
-    condition: PalletCondition;
-    quantity: number;
-    note?: string;
-  },
+  input: { palletTypeId: string; condition: PalletCondition; quantity: number; note: string }
 ) {
-  requireApprover(user);
+  requirePalletManager(user);
   if (input.quantity <= 0) throw new HttpError(400, "quantity ต้อง > 0");
   if (!input.note?.trim()) throw new HttpError(400, "ต้องระบุเหตุผลการตัดจำหน่าย");
-  const warehouse = await getWarehouse();
-  const avail = await getPhysicalBalance(warehouse.id, input.palletTypeId, input.condition);
-  if (avail < input.quantity) {
-    throw new HttpError(400, `ยอด ${input.condition} คงเหลือไม่พอ (มี ${avail}, ขอ ${input.quantity})`);
-  }
 
-  const movement = await prisma.stockMovement.create({
-    data: {
+  const warehouse = await getWarehouse();
+  const docNo = await nextWarehouseOpDocNo("WRITE_OFF");
+  const reason = `[WRITE_OFF] ${input.note.trim()}`;
+  const now = new Date();
+
+  const opId = randomUUID();
+
+  await prisma.$transaction(async (tx) => {
+    await tx.warehouseOperation.create({
+      data: { id: opId, docNo, type: "WRITE_OFF", reason, createdById: user.id, createdAt: now }
+    });
+    await moveStock(tx, {
       palletTypeId: input.palletTypeId,
       condition: input.condition,
-      quantity: input.quantity,
+      delta: -input.quantity,
       fromDepartmentId: warehouse.id,
-      reason: `[WRITE_OFF] ${input.note.trim()}`,
-    },
+      warehouseOpId: opId,
+      reason,
+      occurredAt: now
+    });
   });
 
   await writeAudit({
     userId: user.id,
-    entity: "stock_movement",
-    entityId: movement.id,
+    entity: "warehouse_operation",
+    entityId: opId,
     action: "write_off",
-    after: input,
+    after: input
   });
 
-  return movement;
+  return { warehouseOpId: opId };
 }
 
+// ─── Warehouse summary ────────────────────────────────────────────────────────
+// Returns every active palletType plus any inactive palletType that still has
+// stock in the warehouse (so PM can clear leftover stock after deactivation).
 export async function getWarehouseConditionSummary() {
-  const warehouse = await getWarehouse();
-  const [ins, outs, palletTypes] = await Promise.all([
-    prisma.stockMovement.groupBy({
-      by: ["palletTypeId", "condition"],
-      _sum: { quantity: true },
-      where: { toDepartmentId: warehouse.id },
-    }),
-    prisma.stockMovement.groupBy({
-      by: ["palletTypeId", "condition"],
-      _sum: { quantity: true },
-      where: { fromDepartmentId: warehouse.id },
-    }),
-    prisma.palletType.findMany({ where: { active: true }, orderBy: { code: "asc" } }),
+  const [stocks, activePTs] = await Promise.all([
+    prisma.warehouseStock.findMany({ include: { palletType: true } }),
+    prisma.palletType.findMany({ where: { active: true }, orderBy: { name: "asc" } })
   ]);
 
-  const bal = new Map<string, number>();
-  const k = (pt: string, c: string) => `${pt}::${c}`;
-  for (const r of ins) bal.set(k(r.palletTypeId, r.condition), r._sum.quantity ?? 0);
-  for (const r of outs) {
-    const key = k(r.palletTypeId, r.condition);
-    bal.set(key, (bal.get(key) ?? 0) - (r._sum.quantity ?? 0));
+  const byPt = new Map<
+    string,
+    { id: string; name: string; active: boolean; usable: number; inRepair: number; unusable: number }
+  >();
+
+  for (const pt of activePTs) {
+    byPt.set(pt.id, { id: pt.id, name: pt.name, active: true, usable: 0, inRepair: 0, unusable: 0 });
   }
 
-  return palletTypes.map((pt) => ({
-    id: pt.id,
-    code: pt.code,
-    name: pt.name,
-    usable: bal.get(k(pt.id, "USABLE")) ?? 0,
-    inRepair: bal.get(k(pt.id, "IN_REPAIR")) ?? 0,
-    unusable: bal.get(k(pt.id, "UNUSABLE")) ?? 0,
-  }));
+  for (const s of stocks) {
+    let row = byPt.get(s.palletTypeId);
+    if (!row) {
+      row = {
+        id: s.palletType.id,
+        name: s.palletType.name,
+        active: s.palletType.active,
+        usable: 0,
+        inRepair: 0,
+        unusable: 0
+      };
+      byPt.set(s.palletTypeId, row);
+    }
+    if (s.condition === "GOOD") row.usable = s.quantity;
+    else if (s.condition === "PENDING_REPAIR") row.inRepair = s.quantity;
+    else if (s.condition === "DAMAGED") row.unusable = s.quantity;
+  }
+
+  return Array.from(byPt.values())
+    .filter((r) => r.active || r.usable + r.inRepair + r.unusable > 0)
+    .sort((a, b) => a.name.localeCompare(b.name));
 }

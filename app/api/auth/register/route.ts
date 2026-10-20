@@ -1,66 +1,59 @@
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { getSessionUserAnyStatus, HttpError } from "@/lib/auth/current-user";
+import { hashPassword } from "@/lib/auth/password";
 import { fail, ok, readJson } from "@/lib/http/respond";
+import { HttpError } from "@/lib/auth/current-user";
 import { writeAudit } from "@/lib/services/audit";
+import { notifyNewUserToAdmins } from "@/lib/services/notification";
 
 const Body = z.object({
-  fullName: z.string().min(1).max(120),
-  phone: z.string().min(1).max(40),
+  email:        z.string().email("อีเมลไม่ถูกต้อง").max(200),
+  password:     z.string().min(8, "รหัสผ่านอย่างน้อย 8 ตัวอักษร").max(200),
+  fullName:     z.string().min(1).max(120),
+  phone:        z.string().min(1).max(40),
   departmentId: z.string().min(1),
-  sectionId: z.string().optional().nullable(),
+  sectionId:    z.string().optional().nullable(),
 });
 
-// POST /api/auth/register
-// First-time registration after LINE login. Only works for the current session user.
-// Sets fullName / phone / departmentId / sectionId. Status stays PENDING until admin approves.
+// POST /api/auth/register — public endpoint, creates a PENDING user.
 export async function POST(request: Request) {
   try {
-    const user = await getSessionUserAnyStatus();
-    if (!user) throw new HttpError(401, "unauthenticated");
-
     const data = Body.parse(await readJson(request));
 
-    // Validate department exists + active
-    const dept = await prisma.department.findUnique({ where: { id: data.departmentId } });
-    if (!dept || !dept.active) throw new HttpError(400, "ไม่พบแผนก หรือแผนกถูกปิดใช้งาน");
+    const dup = await prisma.user.findFirst({
+      where: { email: { equals: data.email, mode: "insensitive" } },
+    });
+    if (dup) throw new HttpError(400, "อีเมลนี้ถูกใช้งานแล้ว");
 
-    // Validate section if provided
+    const dept = await prisma.department.findUnique({ where: { id: data.departmentId } });
+    if (!dept?.active) throw new HttpError(400, "ไม่พบแผนก หรือแผนกถูกปิดใช้งาน");
+
     if (data.sectionId) {
       const section = await prisma.departmentSection.findUnique({ where: { id: data.sectionId } });
-      if (!section || !section.active) throw new HttpError(400, "ไม่พบ section หรือถูกปิดใช้งาน");
-      if (section.departmentId !== data.departmentId) {
-        throw new HttpError(400, "section ไม่อยู่ในแผนกที่เลือก");
-      }
+      if (!section?.active)                            throw new HttpError(400, "ไม่พบ section หรือถูกปิดใช้งาน");
+      if (section.departmentId !== data.departmentId)  throw new HttpError(400, "section ไม่อยู่ในแผนกที่เลือก");
     }
 
-    const before = { ...user };
-    const updated = await prisma.user.update({
-      where: { id: user.id },
+    const passwordHash = await hashPassword(data.password);
+
+    const user = await prisma.user.create({
       data: {
-        fullName: data.fullName,
-        phone: data.phone,
+        email:        data.email.toLowerCase(),
+        passwordHash,
+        fullName:     data.fullName,
+        phone:        data.phone,
         departmentId: data.departmentId,
-        sectionId: data.sectionId ?? null,
-        // ให้ status PENDING รออนุมัติ (ยกเว้นเคย ACTIVE อยู่แล้ว — admin เคยอนุมัติไว้)
-        status: user.status === "ACTIVE" ? "ACTIVE" : "PENDING",
+        sectionId:    data.sectionId ?? null,
+        roles:        ["REQUESTER"],
+        status:       "PENDING",
       },
     });
 
-    await writeAudit({
-      userId: user.id,
-      entity: "user",
-      entityId: user.id,
-      action: "register",
-      before,
-      after: updated,
-    });
+    await writeAudit({ entity: "user", entityId: user.id, action: "register", after: { email: user.email } });
 
-    return ok({
-      id: updated.id,
-      status: updated.status,
-      fullName: updated.fullName,
-    });
+    notifyNewUserToAdmins(user.id).catch(() => {});
+
+    return ok({ id: user.id, status: user.status });
   } catch (e) {
     return fail(e);
   }

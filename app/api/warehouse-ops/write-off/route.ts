@@ -5,7 +5,7 @@ import { writeOffPallets } from "@/lib/services/warehouse";
 
 const Body = z.object({
   palletTypeId: z.string(),
-  condition: z.enum(["USABLE", "IN_REPAIR", "UNUSABLE"]).default("UNUSABLE"),
+  condition: z.enum(["GOOD", "PENDING_REPAIR", "DAMAGED"]).default("DAMAGED"),
   quantity: z.coerce.number().int().positive(),
   note: z.string().min(1).max(500),
 });
