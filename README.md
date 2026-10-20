@@ -8,15 +8,15 @@
 
 ## โครงสร้าง URL
 
-| URL | ผู้ใช้ |
-|---|---|
-| `/` | หน้าแรก (เลือกพอร์ทัล) |
-| `/app` | พนักงาน — สร้างคำขอ, ดูสถานะ, อนุมัติ |
-| `/manage` | Admin / Pallet Manager — Dashboard, จัดการข้อมูล, รายงาน |
-| `/auth/login` | เข้าสู่ระบบ (ใช้ได้ทั้ง 2 ฝั่ง) |
-| `/auth/register` | สมัครใช้งาน (public) |
-| `/auth/forgot-password` | ลืมรหัสผ่าน |
-| `/auth/reset-password` | รีเซ็ตรหัสผ่าน |
+| URL                     | ผู้ใช้                                                   |
+| ----------------------- | -------------------------------------------------------- |
+| `/`                     | หน้าแรก (เลือกพอร์ทัล)                                   |
+| `/app`                  | พนักงาน — สร้างคำขอ, ดูสถานะ, อนุมัติ                    |
+| `/manage`               | Admin / Pallet Manager — Dashboard, จัดการข้อมูล, รายงาน |
+| `/auth/login`           | เข้าสู่ระบบ (ใช้ได้ทั้ง 2 ฝั่ง)                          |
+| `/auth/register`        | สมัครใช้งาน (public)                                     |
+| `/auth/forgot-password` | ลืมรหัสผ่าน                                              |
+| `/auth/reset-password`  | รีเซ็ตรหัสผ่าน                                           |
 
 ---
 
@@ -50,12 +50,12 @@ DATABASE_URL=postgresql://postgres.<ref>:<pass>@aws-0-ap-southeast-1.pooler.supa
 DIRECT_URL=postgresql://postgres.<ref>:<pass>@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres
 
 # Supabase → Settings → API
-NEXT_PUBLIC_SUPABASE_URL=https://<ref>.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-key>
+SUPABASE_URL=https://<ref>.supabase.co
+SUPABASE_ANON_KEY=<anon-key>
 SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
 
 # App
-NEXT_PUBLIC_APP_URL=http://localhost:3000
+APP_URL=http://localhost:3000
 
 # สร้าง SESSION_SECRET ด้วย PowerShell:
 # [Convert]::ToBase64String((1..32 | % { Get-Random -Max 256 }))
@@ -86,13 +86,13 @@ npm run db:seed
 
 ข้อมูล seed ที่ได้:
 
-| email | ชื่อ | Role | สถานะ |
-|---|---|---|---|
-| `admin@noritake.local` | Admin | ADMIN | ACTIVE |
-| `manager@noritake.local` | หัวหน้าคลังพาเลท ทดสอบ | PALLET_MANAGER | ACTIVE |
-| `supply1@noritake.local` | พนักงานพัสดุ ทดสอบ | REQUESTER | ACTIVE |
-| `produce1@noritake.local` | พนักงานผลิต ทดสอบ | REQUESTER | ACTIVE |
-| `dispatch1@noritake.local` | พนักงานจ่ายสินค้า ทดสอบ | REQUESTER | ACTIVE |
+| email                      | ชื่อ                    | Role           | สถานะ  |
+| -------------------------- | ----------------------- | -------------- | ------ |
+| `admin@noritake.local`     | Admin                   | ADMIN          | ACTIVE |
+| `manager@noritake.local`   | หัวหน้าคลังพาเลท ทดสอบ  | PALLET_MANAGER | ACTIVE |
+| `supply1@noritake.local`   | พนักงานพัสดุ ทดสอบ      | REQUESTER      | ACTIVE |
+| `produce1@noritake.local`  | พนักงานผลิต ทดสอบ       | REQUESTER      | ACTIVE |
+| `dispatch1@noritake.local` | พนักงานจ่ายสินค้า ทดสอบ | REQUESTER      | ACTIVE |
 
 > Seed users ยังไม่มีรหัสผ่าน ใช้ **dev-login** (dev เท่านั้น) หรือรันคำสั่งด้านล่างเพื่อตั้งรหัสผ่าน
 
@@ -110,6 +110,7 @@ npm run dev
 ```
 
 เปิด browser:
+
 - `http://localhost:3000` — หน้าแรก
 - `http://localhost:3000/auth/login` → เข้าสู่ระบบด้วย `admin` / `MyPassword123`
 - `http://localhost:3000/auth/register` → สมัครใช้งาน (public)
@@ -142,18 +143,18 @@ git push -u origin main
 
 **Settings → Environment Variables** → ใส่ค่าทั้งหมด (เปลี่ยนจาก local เฉพาะที่ระบุ):
 
-| Key | ค่าสำหรับ Production |
-|---|---|
-| `DATABASE_URL` | pooled connection (port 6543) ของ Supabase project |
-| `DIRECT_URL` | direct connection (port 5432) |
-| `NEXT_PUBLIC_SUPABASE_URL` | เหมือน local |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | เหมือน local |
-| `SUPABASE_SERVICE_ROLE_KEY` | เหมือน local |
-| `NEXT_PUBLIC_APP_URL` | `https://your-app.vercel.app` |
-| `SESSION_SECRET` | **random ใหม่** (ไม่ซ้ำกับ local) |
-| `RESEND_API_KEY` | API key จาก [resend.com](https://resend.com) |
-| `RESEND_FROM` | อีเมลที่ verify domain แล้ว เช่น `noreply@yourdomain.com` |
-| `CRON_SECRET` | **random ใหม่** สำหรับ cron job |
+| Key                         | ค่าสำหรับ Production                                      |
+| --------------------------- | --------------------------------------------------------- |
+| `DATABASE_URL`              | pooled connection (port 6543) ของ Supabase project        |
+| `DIRECT_URL`                | direct connection (port 5432)                             |
+| `SUPABASE_URL`              | เหมือน local                                              |
+| `SUPABASE_ANON_KEY`         | เหมือน local                                              |
+| `SUPABASE_SERVICE_ROLE_KEY` | เหมือน local                                              |
+| `APP_URL`                   | `https://your-app.vercel.app`                             |
+| `SESSION_SECRET`            | **random ใหม่** (ไม่ซ้ำกับ local)                         |
+| `RESEND_API_KEY`            | API key จาก [resend.com](https://resend.com)              |
+| `RESEND_FROM`               | อีเมลที่ verify domain แล้ว เช่น `noreply@yourdomain.com` |
+| `CRON_SECRET`               | **random ใหม่** สำหรับ cron job                           |
 
 ### 4) Deploy
 
@@ -189,21 +190,21 @@ Cron จะทำงานอัตโนมัติหลัง deploy — ต
 
 ## คำสั่งที่ใช้บ่อย
 
-| คำสั่ง | ทำอะไร |
-|---|---|
-| `npm run dev` | Dev server |
-| `npm run build` | Production build |
-| `npm run lint` | ESLint |
-| `npm run typecheck` | TypeScript check |
-| `npm test` | Vitest unit tests |
-| `npm run test:e2e` | Playwright E2E tests (ต้อง server รันอยู่) |
-| `npm run db:generate` | Generate Prisma Client |
-| `npm run db:migrate` | สร้าง + apply migration (dev) |
-| `npm run db:migrate:deploy` | Apply migration ที่มีอยู่ (prod/CI) |
-| `npm run db:seed` | โหลด seed data |
-| `npm run db:studio` | เปิด Prisma Studio |
-| `npm run db:reset` | รีเซ็ต DB ทั้งหมด (**ระวัง**: ลบข้อมูล) |
-| `npm run create-admin -- <code> <pass> [name]` | สร้าง/อัปเดต admin user |
+| คำสั่ง                                         | ทำอะไร                                     |
+| ---------------------------------------------- | ------------------------------------------ |
+| `npm run dev`                                  | Dev server                                 |
+| `npm run build`                                | Production build                           |
+| `npm run lint`                                 | ESLint                                     |
+| `npm run typecheck`                            | TypeScript check                           |
+| `npm test`                                     | Vitest unit tests                          |
+| `npm run test:e2e`                             | Playwright E2E tests (ต้อง server รันอยู่) |
+| `npm run db:generate`                          | Generate Prisma Client                     |
+| `npm run db:migrate`                           | สร้าง + apply migration (dev)              |
+| `npm run db:migrate:deploy`                    | Apply migration ที่มีอยู่ (prod/CI)        |
+| `npm run db:seed`                              | โหลด seed data                             |
+| `npm run db:studio`                            | เปิด Prisma Studio                         |
+| `npm run db:reset`                             | รีเซ็ต DB ทั้งหมด (**ระวัง**: ลบข้อมูล)    |
+| `npm run create-admin -- <code> <pass> [name]` | สร้าง/อัปเดต admin user                    |
 
 ### รัน Playwright E2E
 

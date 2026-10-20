@@ -29,7 +29,7 @@ export async function POST(req: Request) {
     // Rate limit: max 3 reset requests per 15 minutes per user
     const windowStart = new Date(Date.now() - 15 * 60 * 1000);
     const recentCount = await prisma.passwordResetToken.count({
-      where: { userId: user.id, createdAt: { gte: windowStart } },
+      where: { userId: user.id, createdAt: { gte: windowStart } }
     });
     if (recentCount >= 3) {
       return ok({ sent: true });
@@ -48,7 +48,7 @@ export async function POST(req: Request) {
       }
     });
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
+    const appUrl = process.env.APP_URL ?? "";
     const resetLink = `${appUrl}/auth/reset-password?token=${rawToken}`;
 
     await queueEmail(
@@ -60,15 +60,15 @@ export async function POST(req: Request) {
         bodyLines: [
           `สวัสดีคุณ <strong>${user.fullName}</strong>`,
           "เราได้รับคำขอรีเซ็ตรหัสผ่านสำหรับบัญชีของคุณ กรุณาคลิกปุ่มด้านล่างเพื่อตั้งรหัสผ่านใหม่",
-          "<strong>ลิงก์นี้จะหมดอายุภายใน 30 นาที</strong> หากไม่ได้ดำเนินการภายในเวลาที่กำหนด กรุณาขอลิงก์ใหม่อีกครั้ง",
+          "<strong>ลิงก์นี้จะหมดอายุภายใน 30 นาที</strong> หากไม่ได้ดำเนินการภายในเวลาที่กำหนด กรุณาขอลิงก์ใหม่อีกครั้ง"
         ],
         summaryRows: [
-          { label: "อีเมล",       value: user.email ?? email },
-          { label: "หมดอายุใน",  value: "30 นาที นับจากเวลาที่ได้รับอีเมลนี้" },
+          { label: "อีเมล", value: user.email ?? email },
+          { label: "หมดอายุใน", value: "30 นาที นับจากเวลาที่ได้รับอีเมลนี้" }
         ],
         ctaText: "รีเซ็ตรหัสผ่าน",
-        ctaUrl: resetLink,
-      }),
+        ctaUrl: resetLink
+      })
     );
 
     return ok({ sent: true });

@@ -24,7 +24,7 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 function appUrl() {
-  return process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
+  return process.env.APP_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
 }
 
 // -----------------------------------------------------------------------
@@ -577,7 +577,7 @@ export async function adjustStock(
     // Record the warehouse operation so dashboard reports can categorize this
     // movement as an "ADJUSTMENT" (via stockMovement.warehouseOpId → warehouseOp.type).
     await tx.warehouseOperation.create({
-      data: { id: groupId, docNo, type: "ADJUSTMENT", reason, createdById: user.id, createdAt: now },
+      data: { id: groupId, docNo, type: "ADJUSTMENT", reason, createdById: user.id, createdAt: now }
     });
     await moveStock(tx, {
       palletTypeId: input.palletTypeId,
@@ -588,7 +588,7 @@ export async function adjustStock(
       warehouseOpId: groupId,
       movementGroupId: groupId,
       reason,
-      occurredAt: now,
+      occurredAt: now
     });
   });
 

@@ -6,7 +6,7 @@ import { queueEmail, buildRequestEmail, buildUserEmail } from "@/lib/services/em
 // -----------------------------------------------------------------------------
 
 function baseUrl(): string {
-  return process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
+  return process.env.APP_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
 }
 
 /** Create an in-app Notification record for a user. */

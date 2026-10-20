@@ -17,7 +17,7 @@ export async function GET(req: Request) {
 
     const tokenHash = createHash("sha256").update(rawToken).digest("hex");
     const record = await prisma.passwordResetToken.findFirst({
-      where: { tokenHash, usedAt: null, expiresAt: { gt: new Date() } },
+      where: { tokenHash, usedAt: null, expiresAt: { gt: new Date() } }
     });
 
     if (!record) throw new HttpError(400, "ลิงก์หมดอายุหรือใช้ไปแล้ว");
@@ -49,7 +49,7 @@ export async function POST(req: Request) {
 
     // Find token first to get userId — actual consumption is atomic below
     const resetToken = await prisma.passwordResetToken.findFirst({
-      where: { tokenHash, usedAt: null, expiresAt: { gt: now } },
+      where: { tokenHash, usedAt: null, expiresAt: { gt: now } }
     });
 
     if (!resetToken) {
@@ -61,7 +61,7 @@ export async function POST(req: Request) {
     // Atomically mark token as used — if count=0 a concurrent request already consumed it
     const consumed = await prisma.passwordResetToken.updateMany({
       where: { id: resetToken.id, usedAt: null },
-      data: { usedAt: now },
+      data: { usedAt: now }
     });
     if (consumed.count === 0) {
       throw new HttpError(400, "ลิงก์หมดอายุหรือใช้ไปแล้ว");
@@ -71,11 +71,11 @@ export async function POST(req: Request) {
 
     await prisma.user.update({
       where: { id: resetToken.userId },
-      data: { passwordHash: newPasswordHash },
+      data: { passwordHash: newPasswordHash }
     });
 
     if (user?.email) {
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
+      const appUrl = process.env.APP_URL ?? "";
       await queueEmail(
         prisma,
         user.email,
@@ -85,11 +85,11 @@ export async function POST(req: Request) {
           bodyLines: [
             `สวัสดีคุณ <strong>${user.fullName}</strong>`,
             "รหัสผ่านของบัญชีคุณถูกเปลี่ยนเรียบร้อยแล้ว คุณสามารถเข้าสู่ระบบด้วยรหัสผ่านใหม่ได้ทันที",
-            "<strong>หากคุณไม่ได้ดำเนินการนี้</strong> กรุณาติดต่อผู้ดูแลระบบทันที เนื่องจากบัญชีของคุณอาจถูกเข้าถึงโดยผู้อื่น",
+            "<strong>หากคุณไม่ได้ดำเนินการนี้</strong> กรุณาติดต่อผู้ดูแลระบบทันที เนื่องจากบัญชีของคุณอาจถูกเข้าถึงโดยผู้อื่น"
           ],
           ctaText: "เข้าสู่ระบบ",
-          ctaUrl: `${appUrl}/auth/login`,
-        }),
+          ctaUrl: `${appUrl}/auth/login`
+        })
       );
     }
 
