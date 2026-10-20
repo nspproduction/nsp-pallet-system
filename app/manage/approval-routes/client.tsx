@@ -51,7 +51,7 @@ export function ApprovalRoutesClient({
     }
   }
 
-  async function save(data: { departmentId: string; requestType: string; steps: StepData[] }): Promise<string | null> {
+  async function save(data: { id?: string; departmentId: string; requestType: string; steps: StepData[] }): Promise<string | null> {
     const res = await fetch("/api/approval-routes", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -174,6 +174,7 @@ export function ApprovalRoutesClient({
           initial={editing}
           departments={departments}
           approvers={approvers}
+          existingRoutes={routes}
           onSave={save}
           onClose={() => { setShowForm(false); setEditing(null); }}
         />
@@ -187,21 +188,61 @@ export function ApprovalRoutesClient({
 // Route form modal
 // -----------------------------------------------------------------------
 
+const ALL_TYPES = ["ISSUE", "RETURN"] as const;
+
 function RouteFormModal({
   initial,
   departments,
   approvers,
+  existingRoutes,
   onSave,
   onClose,
 }: {
   initial: RouteData | null;
   departments: Department[];
   approvers: Approver[];
-  onSave: (data: { departmentId: string; requestType: string; steps: StepData[] }) => Promise<string | null>;
+  existingRoutes: RouteData[];
+  onSave: (data: { id?: string; departmentId: string; requestType: string; steps: StepData[] }) => Promise<string | null>;
   onClose: () => void;
 }) {
-  const [departmentId, setDepartmentId] = useState(initial?.departmentId ?? "");
-  const [requestType, setRequestType] = useState(initial?.requestType ?? "ISSUE");
+  const isEdit = initial !== null;
+
+  // Compute which (dept, type) combos are already occupied (excluding the one
+  // currently being edited). An active route pair blocks creating/moving into it.
+  function takenTypesFor(deptId: string): Set<string> {
+    return new Set(
+      existingRoutes
+        .filter((r) => r.departmentId === deptId && r.id !== initial?.id)
+        .map((r) => r.requestType),
+    );
+  }
+
+  // Departments that still have at least one available type (for create mode)
+  const deptsWithRoom = departments.filter((d) => takenTypesFor(d.id).size < ALL_TYPES.length);
+
+  // Initial department: in create mode, pick the first dept with room
+  const [departmentId, setDepartmentId] = useState<string>(
+    initial?.departmentId ?? deptsWithRoom[0]?.id ?? "",
+  );
+  const taken = takenTypesFor(departmentId);
+  const availableTypes = ALL_TYPES.filter((t) => !taken.has(t));
+
+  const [requestType, setRequestType] = useState<string>(
+    initial?.requestType ?? availableTypes[0] ?? "ISSUE",
+  );
+
+  // When department changes (create mode only), reset type to a valid one.
+  // Uses "adjust state while rendering" pattern.
+  const [prevDeptId, setPrevDeptId] = useState(departmentId);
+  if (!isEdit && departmentId !== prevDeptId) {
+    setPrevDeptId(departmentId);
+    const nextTaken = takenTypesFor(departmentId);
+    const nextAvailable = ALL_TYPES.filter((t) => !nextTaken.has(t));
+    if (!nextAvailable.includes(requestType as (typeof ALL_TYPES)[number])) {
+      setRequestType(nextAvailable[0] ?? "");
+    }
+  }
+
   const [steps, setSteps] = useState<StepData[]>(
     initial?.steps.length
       ? initial.steps
@@ -222,7 +263,12 @@ function RouteFormModal({
   async function handleSave() {
     setBusy(true);
     setErr(null);
-    const errMsg = await onSave({ departmentId, requestType, steps });
+    const errMsg = await onSave({
+      id: initial?.id,
+      departmentId,
+      requestType,
+      steps,
+    });
     setBusy(false);
     if (errMsg) setErr(errMsg);
   }
@@ -271,28 +317,57 @@ function RouteFormModal({
 
         <div className="max-h-[70vh] space-y-4 overflow-y-auto p-5">
           <label className="block">
-            <span className="text-xs font-medium text-slate-600">แผนก</span>
+            <span className="text-xs font-medium text-slate-600">
+              แผนก{isEdit && <span className="ml-1 text-[10px] text-slate-400">(ล็อก — แก้ไขไม่ได้)</span>}
+            </span>
             <select
               value={departmentId}
+              disabled={isEdit}
               onChange={(e) => {
                 setDepartmentId(e.target.value);
                 setSteps((prev) => prev.map((s) => ({ ...s, approverIds: [] })));
               }}
-              className={twMerge(INPUT, "mt-1")}
+              className={twMerge(INPUT, "mt-1", "disabled:bg-slate-50 disabled:text-slate-500")}
             >
-              <option value="">- เลือกแผนก -</option>
-              {departments.map((d) => (
-                <option key={d.id} value={d.id}>{d.name}</option>
-              ))}
+              {!isEdit && <option value="">- เลือกแผนก -</option>}
+              {departments.map((d) => {
+                const deptTaken = takenTypesFor(d.id).size;
+                const full = deptTaken >= ALL_TYPES.length;
+                return (
+                  <option key={d.id} value={d.id} disabled={!isEdit && full}>
+                    {d.name}{!isEdit && full ? " (สร้างครบแล้ว)" : ""}
+                  </option>
+                );
+              })}
             </select>
           </label>
 
           <label className="block">
-            <span className="text-xs font-medium text-slate-600">ประเภทคำขอ</span>
-            <select value={requestType} onChange={(e) => setRequestType(e.target.value)} className={twMerge(INPUT, "mt-1")}>
-              <option value="ISSUE">เบิกออก</option>
-              <option value="RETURN">คืนเข้า</option>
+            <span className="text-xs font-medium text-slate-600">
+              ประเภทคำขอ{isEdit && <span className="ml-1 text-[10px] text-slate-400">(ล็อก — แก้ไขไม่ได้)</span>}
+            </span>
+            <select
+              value={requestType}
+              disabled={isEdit}
+              onChange={(e) => setRequestType(e.target.value)}
+              className={twMerge(INPUT, "mt-1", "disabled:bg-slate-50 disabled:text-slate-500")}
+            >
+              {isEdit ? (
+                <option value={requestType}>{TYPE_LABEL[requestType] ?? requestType}</option>
+              ) : (
+                <>
+                  {availableTypes.length === 0 && <option value="">- ไม่มีประเภทที่สร้างได้ -</option>}
+                  {availableTypes.map((t) => (
+                    <option key={t} value={t}>{TYPE_LABEL[t] ?? t}</option>
+                  ))}
+                </>
+              )}
             </select>
+            {!isEdit && availableTypes.length === 0 && departmentId && (
+              <p className="mt-1 text-[11px] text-amber-600">
+                แผนกนี้มี route ครบทั้ง 2 ประเภทแล้ว — ต้องลบ route เดิมก่อนจึงจะสร้างใหม่ได้
+              </p>
+            )}
           </label>
 
           <div className="space-y-3">
@@ -381,7 +456,7 @@ function RouteFormModal({
           <button
             type="button"
             onClick={handleSave}
-            disabled={busy || !departmentId}
+            disabled={busy || !departmentId || !requestType}
             className="h-10 flex-1 rounded-xl bg-brand-600 text-sm font-semibold text-white disabled:opacity-50"
           >
             {busy ? "กำลังบันทึก..." : "บันทึก"}

@@ -17,6 +17,11 @@ export interface RouteInput {
   departmentId: string;
   requestType: RequestType;
   steps: StepInput[];
+  /**
+   * Omit for create (will reject if an active route exists for the same
+   * dept × type). Set to the existing route id for update.
+   */
+  id?: string;
 }
 
 // A step snapshot stored on the Request at submission time.
@@ -119,8 +124,23 @@ export async function upsertRoute(user: SessionUser, input: RouteInput) {
     where: { departmentId_requestType: { departmentId: input.departmentId, requestType: input.requestType } }
   });
 
+  if (input.id) {
+    // Update path — client is editing a known route. The (dept, type) must
+    // match the record pointed at by id, otherwise this would silently
+    // overwrite a different route.
+    if (!existing || existing.id !== input.id) {
+      throw new HttpError(400, "ข้อมูลที่ส่งไม่ตรงกับ route ที่ต้องการแก้ไข");
+    }
+  } else {
+    // Create path — if an active route already exists for this (dept, type),
+    // reject. Admin must delete the existing one first.
+    if (existing && existing.isActive) {
+      throw new HttpError(400, "แผนกนี้มี route สำหรับประเภทนี้แล้ว — กรุณาลบของเดิมก่อน");
+    }
+  }
+
   if (existing) {
-    // Update: delete old steps, recreate
+    // Update (or re-activate a soft-deleted route): delete old steps, recreate
     await prisma.$transaction([
       prisma.approvalStep.deleteMany({ where: { routeId: existing.id } }),
       prisma.approvalRoute.update({

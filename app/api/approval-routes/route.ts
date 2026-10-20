@@ -10,6 +10,7 @@ const StepSchema = z.object({
 });
 
 const Body = z.object({
+  id: z.string().optional(),
   departmentId: z.string().min(1),
   requestType: z.enum(["ISSUE", "RETURN"]),
   steps: z.array(StepSchema).min(1).max(10),
