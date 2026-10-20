@@ -9,7 +9,7 @@ import type { SessionUser } from "@/lib/auth/current-user";
 export interface HoursInput {
   dayOfWeek: number; // 0=Sun 1=Mon … 6=Sat
   startTime: string; // "09:00"
-  endTime: string;   // "11:30"
+  endTime: string; // "11:30"
   label?: string | null;
 }
 
@@ -30,12 +30,19 @@ export function nowBangkok(): { dayOfWeek: number; time: string; dateStr: string
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false,
+    hourCycle: "h23"
+    // hour12: false,
   }).formatToParts(now);
 
   const get = (type: string) => bkk.find((p) => p.type === type)?.value ?? "";
   const weekdayMap: Record<string, number> = {
-    Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+    Sun: 0,
+    Mon: 1,
+    Tue: 2,
+    Wed: 3,
+    Thu: 4,
+    Fri: 5,
+    Sat: 6
   };
   const dayOfWeek = weekdayMap[get("weekday")] ?? 0;
   const hour = get("hour").padStart(2, "0");
@@ -68,13 +75,13 @@ export async function checkOperatingHours(): Promise<OperatingStatus> {
   const today = new Date();
   const startOfDay = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
   const holiday = await prisma.holidayDate.findFirst({
-    where: { date: startOfDay, isActive: true },
+    where: { date: startOfDay, isActive: true }
   });
   if (holiday) return { isOpen: false, nextOpenAt: `วันหยุด: ${holiday.name}` };
 
   const hours = await prisma.operatingHours.findMany({
     where: { dayOfWeek, isActive: true },
-    orderBy: { startTime: "asc" },
+    orderBy: { startTime: "asc" }
   });
 
   const currentMin = timeToMinutes(time);
@@ -98,7 +105,7 @@ export async function checkOperatingHours(): Promise<OperatingStatus> {
 export async function listOperatingHours() {
   return prisma.operatingHours.findMany({
     where: { isActive: true },
-    orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }],
+    orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }]
   });
 }
 
@@ -138,7 +145,7 @@ function validateTimeRange(input: HoursInput) {
 export async function listHolidays() {
   return prisma.holidayDate.findMany({
     where: { isActive: true },
-    orderBy: { date: "asc" },
+    orderBy: { date: "asc" }
   });
 }
 
