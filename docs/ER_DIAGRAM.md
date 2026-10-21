@@ -1,250 +1,447 @@
 # ER Diagram — ระบบเบิกจ่ายพาเลท
 
-Diagram นี้สะท้อนโครงสร้างที่กำหนดใน `prisma/schema.prisma` โดยตรง (ไม่มีตาราง `locations` แล้ว ตั้งแต่ 2026-10-02)
+เอกสารนี้สะท้อนโครงสร้างข้อมูลจริงใน `prisma/schema.prisma` (อัปเดต 2026-10-21)
 
-## ภาพรวม
+> หลักการที่ยึดในการออกแบบ (ตาม `CLAUDE.md`):
+> 1. นับยอดแบบ bulk ไม่ติดตามรายตัว (ไม่มี serial/QR)
+> 2. ยอดคลัง = `WarehouseStock` (snapshot) + `StockMovement` (ledger) อัปเดตใน transaction เดียวกัน
+> 3. ทุก movement มีทิศทาง `fromDepartmentId` (ออก) / `toDepartmentId` (เข้า)
+> 4. ผู้ร้องขอ ≠ ผู้อนุมัติ (บังคับที่ service layer)
+> 5. การอนุมัติเป็น multi-step; ขั้นสุดท้ายคือ `PALLET_MANAGER` เสมอ
+
+---
+
+## 1. ภาพรวม (Mermaid)
 
 ```mermaid
 erDiagram
-    Department ||--o{ User              : has
-    Department ||--o{ DepartmentSection : "has sections"
+    Department ||--o{ User                   : "has"
+    Department ||--o{ DepartmentSection      : "has sections"
+    Department ||--o{ ApprovalRoute          : "owns route"
+    Department ||--o{ WarehouseStock         : "(indirect)"
+    Department ||--o{ DepartmentStock        : "holds snapshot"
 
-    DepartmentSection ||--o{ User : "assigned to"
+    DepartmentSection ||--o{ User            : "assigned to"
 
-    User ||--o{ Request       : "requests"
-    User ||--o{ Approval      : "decides"
-    User ||--o{ StoreAction   : "confirms"
-    User ||--o{ AuditLog      : "acts"
-    User ||--o{ Notification  : "receives"
+    User ||--o{ Request                      : "requests"
+    User ||--o{ Approval                     : "decides"
+    User ||--o{ RequestRevision              : "edits"
+    User ||--o{ WarehouseOperation           : "performs"
+    User ||--o{ AuditLog                     : "acts"
+    User ||--o{ Notification                 : "receives"
+    User ||--o{ PasswordResetToken           : "owns"
 
-    PalletType ||--o{ RequestItem   : "typed as"
-    PalletType ||--o{ StockMovement : "typed as"
+    PalletType ||--o{ RequestItem            : "typed as"
+    PalletType ||--o{ StockMovement          : "typed as"
+    PalletType ||--o{ WarehouseStock         : "snapshot by"
+    PalletType ||--o{ DepartmentStock        : "snapshot by"
+    PalletType ||--o{ WarehouseOperationItem : "operated on"
 
-    Department        ||--o{ Request       : "from / to"
-    Department        ||--o{ StockMovement : "from / to"
-    DepartmentSection ||--o{ Request       : "from / to / requester-snapshot"
-    DepartmentSection ||--o{ StockMovement : "from / to"
+    Department        ||--o{ Request         : "from / to"
+    Department        ||--o{ StockMovement   : "from / to"
+    DepartmentSection ||--o{ Request         : "from / to"
+    DepartmentSection ||--o{ StockMovement   : "from / to"
 
-    Request ||--o{ RequestItem   : "contains"
-    Request ||--o{ Approval      : "receives"
-    Request ||--o{ StoreAction   : "closed by"
-    Request ||--o{ StockMovement : "produces"
-    Request ||--o{ Attachment    : "has"
+    Request ||--o{ RequestItem               : "contains"
+    Request ||--o{ Approval                  : "receives"
+    Request ||--o{ RequestRevision           : "has revisions"
+    Request ||--o{ RequestAttachment         : "has files"
+    Request ||--o{ StockMovement             : "produces (on COMPLETED)"
+
+    ApprovalRoute     ||--o{ ApprovalStep    : "has steps"
+    WarehouseOperation ||--o{ WarehouseOperationItem : "has items"
+    WarehouseOperation ||--o{ StockMovement   : "produces"
 
     Department {
-      string id PK
-      string code UK
-      string name
-      bool   active
+      string  id PK
+      string  name
+      bool    isWarehouse
+      bool    active
+      datetime createdAt
     }
 
     DepartmentSection {
-      string id PK
-      string departmentId FK
-      string code
-      string name
-      bool   active
+      string  id PK
+      string  departmentId FK
+      string  name
+      bool    active
+      datetime createdAt
+      datetime updatedAt
     }
 
     User {
-      string id PK
-      string lineUserId UK
-      string employeeCode UK
-      string fullName
-      string phone
-      UserRole role
-      UserStatus status
-      string departmentId FK
-      string sectionId FK
+      string      id PK
+      string      email UK
+      string      fullName
+      string      phone
+      UserRole[]  roles
+      UserStatus  status
+      string      passwordHash
+      int         failedLoginAttempts
+      datetime    lockedUntil
+      string      departmentId FK
+      string      sectionId FK
+      datetime    createdAt
+      datetime    updatedAt
     }
 
     PalletType {
-      string id PK
-      string code UK
-      string name
-      string material
-      string sizeSpec
-      int    minStock
-      bool   active
+      string  id PK
+      string  name UK
+      string  sizeSpec
+      bool    active
+      datetime createdAt
+      datetime updatedAt
+    }
+
+    WarehouseStock {
+      string          palletTypeId PK,FK
+      PalletCondition condition PK
+      int             quantity
+    }
+
+    DepartmentStock {
+      string          palletTypeId PK,FK
+      PalletCondition condition PK
+      string          departmentId PK,FK
+      int             quantity
+    }
+
+    ApprovalRoute {
+      string      id PK
+      string      departmentId FK
+      RequestType requestType
+      bool        isActive
+      datetime    createdAt
+      datetime    updatedAt
+    }
+
+    ApprovalStep {
+      string   id PK
+      string   routeId FK
+      int      stepOrder
+      string   name
+      string[] approverIds
+    }
+
+    OperatingHours {
+      string  id PK
+      int     dayOfWeek
+      string  startTime
+      string  endTime
+      string  label
+      bool    isActive
+      datetime createdAt
+    }
+
+    HolidayDate {
+      string   id PK
+      date     date
+      string   name
+      bool     isActive
+      datetime createdAt
     }
 
     Request {
-      string id PK
-      string docNo UK
-      RequestType type
-      RequestStatus status
-      string requesterId FK
-      string fromDepartmentId FK
-      string fromSectionId FK
-      string toDepartmentId FK
-      string toSectionId FK
-      string sectionId FK
-      datetime neededDate
-      string purpose
-      string referenceNo
-      string note
-      datetime submittedAt
-      datetime approvedAt
-      datetime fulfilledAt
-      datetime cancelledAt
+      string         id PK
+      string         docNo UK
+      RequestType    type
+      RequestStatus  status
+      string         requesterId FK
+      string         fromDepartmentId FK
+      string         fromSectionId FK
+      string         toDepartmentId FK
+      string         toSectionId FK
+      PalletCondition condition
+      int            currentStepOrder
+      json           stepSnapshot
+      datetime       neededDate
+      string         purpose
+      string         note
+      datetime       createdAt
+      datetime       updatedAt
+      datetime       submittedAt
+      datetime       completedAt
+      datetime       cancelledAt
     }
 
     RequestItem {
       string id PK
       string requestId FK
       string palletTypeId FK
-      PalletCondition condition
-      int quantity
-      int actualQuantity
+      int    quantity
       string note
     }
 
-    Approval {
-      string id PK
-      string requestId FK
-      string approverId FK
-      ApprovalDecision decision
-      string comment
-      int step
-      datetime decidedAt
+    RequestRevision {
+      string   id PK
+      string   requestId FK
+      string   editedById FK
+      string   reason
+      json     before
+      json     after
+      datetime createdAt
     }
 
-    StoreAction {
-      string id PK
-      string requestId FK
-      string userId FK
-      StoreActionType action
-      string comment
-      datetime actedAt
+    RequestAttachment {
+      string   id PK
+      string   requestId FK
+      string   filePath
+      string   mimeType
+      int      sizeBytes
+      datetime createdAt
+    }
+
+    Approval {
+      string           id PK
+      string           requestId FK
+      string           approverId FK
+      ApprovalDecision decision
+      string           comment
+      int              step
+      string           stepName
+      datetime         decidedAt
+    }
+
+    WarehouseOperation {
+      string          id PK
+      string          docNo UK
+      WarehouseOpType type
+      string          reason
+      string          createdById FK
+      datetime        createdAt
+    }
+
+    WarehouseOperationItem {
+      string          id PK
+      string          operationId FK
+      string          palletTypeId FK
+      PalletCondition fromCondition
+      PalletCondition toCondition
+      int             quantity
     }
 
     StockMovement {
-      string id PK
-      string movementGroupId
-      string requestId FK
-      string palletTypeId FK
+      string          id PK
+      string          movementGroupId
+      string          requestId FK
+      string          warehouseOpId FK
+      string          palletTypeId FK
       PalletCondition condition
-      int quantity
-      string fromDepartmentId FK
-      string fromSectionId FK
-      string toDepartmentId FK
-      string toSectionId FK
-      string reason
-      datetime occurredAt
+      int             quantity
+      string          fromDepartmentId FK
+      string          fromSectionId FK
+      string          toDepartmentId FK
+      string          toSectionId FK
+      string          reason
+      datetime        occurredAt
+      datetime        createdAt
     }
 
-    Attachment {
-      string id PK
-      string requestId FK
-      string filePath
-      string fileType
-      int fileSize
-      string uploadedBy
-      datetime uploadedAt
+    EmailOutbox {
+      string      id PK
+      string      to
+      string      subject
+      string      bodyHtml
+      EmailStatus status
+      int         attempts
+      string      lastError
+      datetime    createdAt
+      datetime    sentAt
     }
 
-    AuditLog {
-      string id PK
-      string userId FK
-      string entity
-      string entityId
-      string action
-      json before
-      json after
+    PasswordResetToken {
+      string   id PK
+      string   userId FK
+      string   tokenHash UK
+      datetime expiresAt
+      datetime usedAt
       datetime createdAt
     }
 
     Notification {
-      string id PK
-      string userId FK
-      string channel
-      string subject
-      string body
-      datetime sentAt
-      string error
+      string   id PK
+      string   userId FK
+      string   requestId
+      string   subject
+      string   body
+      string   linkUrl
+      datetime readAt
+      datetime createdAt
+    }
+
+    AuditLog {
+      string   id PK
+      string   userId FK
+      string   entity
+      string   entityId
+      string   action
+      json     before
+      json     after
+      string   ipAddress
+      string   userAgent
+      datetime createdAt
+    }
+
+    DocCounter {
+      string   key PK
+      int      seq
+      datetime updatedAt
     }
 ```
 
-## Enums
+---
 
-- **`UserRole`** = `REQUESTER` | `APPROVER` | `STORE` | `ADMIN` | `VIEWER`
-- **`UserStatus`** = `PENDING` | `ACTIVE` | `DISABLED`
-- **`PalletCondition`** = `USABLE` | `IN_REPAIR` | `UNUSABLE`
-- **`RequestType`** = `RECEIVE_NEW` | `ISSUE_INTERNAL` | `RETURN_INTERNAL` | `TRANSFER_INTERNAL` | `SHIP_CUSTOMER` | `RETURN_CUSTOMER` | `SEND_REPAIR` | `RECEIVE_REPAIR` | `WRITE_OFF` | `ADJUSTMENT`
-  - UI เฟส 1 ใช้แค่ 3 ค่าแรก + 2 ตัวสำหรับ admin (`WRITE_OFF`, `ADJUSTMENT`) · ค่าที่เหลือเก็บไว้สำหรับเฟสถัดไป
-- **`RequestStatus`** = `DRAFT` | `PENDING` | `APPROVED` | `FULFILLED` | `REJECTED` | `CANCELLED`
-- **`ApprovalDecision`** = `APPROVED` | `REJECTED`
-- **`StoreActionType`** = `CONFIRM_DISPATCH` | `CONFIRM_RECEIPT`
+## 2. Enums
 
-## หลักการที่ต้องยึด
+| Enum | ค่า |
+|---|---|
+| `UserRole` | `REQUESTER`, `DEPT_APPROVER`, `PALLET_MANAGER`, `VIEWER`, `ADMIN` |
+| `UserStatus` | `PENDING`, `ACTIVE`, `DISABLED` |
+| `PalletCondition` | `GOOD` (ดี), `PENDING_REPAIR` (รอซ่อม), `DAMAGED` (เสีย/รอตัดจำหน่าย) |
+| `RequestType` | `ISSUE` (เบิกออก), `RETURN` (คืนเข้า) |
+| `RequestStatus` | `DRAFT`, `PENDING_DEPT`, `PENDING_WAREHOUSE`, `COMPLETED`, `REJECTED`, `CANCELLED` |
+| `ApprovalDecision` | `APPROVED`, `REJECTED`, `EDIT_APPROVED` |
+| `WarehouseOpType` | `REPAIR_RESULT`, `WRITE_OFF`, `ADJUSTMENT` |
+| `EmailStatus` | `PENDING`, `SENT`, `FAILED` |
 
-1. **`stock_movements` เป็นแหล่งความจริงเดียว**
-   ยอดคงเหลือของ `(palletType, condition, department)` = `SUM(in.quantity) − SUM(out.quantity)` เท่านั้น
-   ไม่มีตาราง `stock_balances` ให้แก้ไขตรง ๆ
+> **หมายเหตุ**: `User.roles` เป็น `UserRole[]` — 1 user ถือได้หลาย role (เช่น REQUESTER + DEPT_APPROVER)
 
-2. **"คลังพาเลท" = Department ที่มี `code = "WH-PL"`**
-   ยอดในคลัง = pallets ที่ `toDepartmentId = WH-PL` ลบด้วย `fromDepartmentId = WH-PL`
-   ไม่มี Location ชนิด WAREHOUSE อีกต่อไป
+---
 
-3. **"เบิก/คืน" ไม่ถามต้นทาง/ปลายทาง**
-   backend อ่าน `user.departmentId` + `user.sectionId` แล้ว routing เอง:
-   - `RECEIVE_NEW`: from = null (ไม่มี supplier concept), to = WH-PL
-   - `ISSUE_INTERNAL`: from = WH-PL, to = user's dept/section
-   - `RETURN_INTERNAL`: from = user's dept/section, to = WH-PL
-   `request.sectionId` คือ snapshot ของ `requester.sectionId` ณ เวลาที่สร้าง (ไม่เปลี่ยนถ้า user ย้าย section ภายหลัง)
+## 3. หลักการสำคัญที่โค้ดบังคับ
 
-4. **เปลี่ยนสถานะพาเลทที่คลังเดิม**
-   ทำเป็น 2 แถวใน `stock_movements` ที่มี `movementGroupId` เดียวกัน:
-   - แถวที่ 1: OUT จาก `(WH-PL, USABLE)`
-   - แถวที่ 2: IN ไปที่ `(WH-PL, IN_REPAIR)`
-   รักษา invariant "1 แถว = 1 condition"
+### 3.1 Single source of truth
+`stock_movements` เป็น **append-only ledger**
+```
+balance(palletType, condition, dept) = Σ(moves in) − Σ(moves out)
+```
+ตาราง `WarehouseStock` / `DepartmentStock` คือ **snapshot** ที่คำนวณพร้อมกันกับการเขียน ledger ภายใน `prisma.$transaction` เดียวกัน (ดู `lib/server/stock/index.ts`)
 
-5. **Soft-reserve**
-   คำขอ `ISSUE_INTERNAL` / `WRITE_OFF` สถานะ `PENDING`/`APPROVED` → หัก available ที่คลัง (WH-PL) ก่อนที่ movement จะเกิดจริง
-   `RETURN_INTERNAL` ไม่ reserve dept balance เพราะเฟส 1 ไม่ track dept balance
+### 3.2 คลังพาเลท
+- ไม่ใช้ `code = "WH-PL"` อีกต่อไป → ใช้ **`Department.isWarehouse = true`** ซึ่งต้องมี 1 แผนก และ `active = true`
+- `isWarehouse` เป็น business flag ไม่ใช่ constraint ที่ DB บังคับ (service layer ตรวจเอง)
 
-6. **Attachments เก็บใน Supabase Storage**
-   ตาราง `attachments` เก็บเฉพาะ path + metadata (fileType / fileSize / uploadedBy) ไม่เก็บ blob
+### 3.3 Routing อัตโนมัติ
+ผู้ใช้ **ไม่ต้องเลือก from/to** — service กำหนดอัตโนมัติตามประเภท:
 
-7. **Audit log เขียนจาก service layer เท่านั้น**
-   `writeAudit()` ใน `lib/services/audit.ts` เป็นช่องทางเดียว · ห้ามเขียน `audit_logs` ตรง ๆ จาก route handler
+| Type   | fromDepartment       | toDepartment         |
+|--------|----------------------|----------------------|
+| ISSUE  | warehouse (คลัง)     | requester.department |
+| RETURN | requester.department | warehouse (คลัง)     |
 
-8. **Soft-delete ทั้งหมด**
-   ตาราง master (pallet_types / departments / department_sections) มีคอลัมน์ `active boolean` ใช้ปิดการใช้งานแทนลบจริง เพื่อรักษา FK ของประวัติ
+`sectionId` ถูก snapshot จาก `user.sectionId` ณ เวลาสร้างคำขอ
 
-## Query ตัวอย่าง
-
-**ยอดในคลัง**
+### 3.4 ป้องกันยอดติดลบ
+`moveStock()` ใช้ **conditional UPDATE** เพื่อป้องกัน race:
 ```sql
-SELECT m.palletTypeId, m.condition,
-       SUM(CASE WHEN m."toDepartmentId" = d.id THEN m.quantity ELSE 0 END)
-     - SUM(CASE WHEN m."fromDepartmentId" = d.id THEN m.quantity ELSE 0 END) AS on_hand
-FROM stock_movements m
-JOIN departments d ON d.code = 'WH-PL'
-WHERE m."toDepartmentId" = d.id OR m."fromDepartmentId" = d.id
-GROUP BY m.palletTypeId, m.condition;
+UPDATE warehouse_stock
+SET    quantity = quantity - :delta
+WHERE  "palletTypeId" = :pt
+  AND  condition = :cond
+  AND  quantity >= :delta;
+```
+ถ้า 0 rows affected → throw `HttpError(400, "ยอด ... ไม่พอ")`
+
+> `DepartmentStock` **ไม่ป้องกันติดลบ** เพราะ BR-3 (คืนเกินยอดเบิกไม่บล็อก)
+
+### 3.5 Snapshot ของ approval route
+`Request.stepSnapshot` เก็บ `[{stepOrder, name, approverIds}]` ไว้ ณ ตอน submit
+→ Admin แก้ `ApprovalRoute` ภายหลัง **ไม่กระทบ** คำขอที่ค้างอยู่ (AC-12)
+
+### 3.6 เลขเอกสาร (`DocCounter`)
+Atomic increment ด้วย raw SQL `INSERT ... ON CONFLICT ... DO UPDATE RETURNING seq`
+
+| ประเภท | Pattern | ตัวอย่าง |
+|---|---|---|
+| Request ISSUE | `PL-ISS-YYMM-NNNN` | `PL-ISS-2610-0001` |
+| Request RETURN | `PL-RET-YYMM-NNNN` | `PL-RET-2610-0042` |
+| Warehouse REPAIR | `WO-REP-YYMM-NNNN` | `WO-REP-2610-0001` |
+| Warehouse WRITE_OFF | `WO-WOF-YYMM-NNNN` | `WO-WOF-2610-0003` |
+| Warehouse ADJUSTMENT | `WO-ADJ-YYMM-NNNN` | `WO-ADJ-2610-0012` |
+
+### 3.7 Append-only tables
+`StockMovement`, `Approval`, `RequestRevision`, `AuditLog`, `WarehouseOperation` — ห้ามเขียนโค้ด update/delete
+
+### 3.8 Soft-delete
+`Department`, `DepartmentSection`, `PalletType`, `ApprovalRoute`, `OperatingHours`, `HolidayDate` → ใช้ `active`/`isActive` flag แทนลบจริง เพื่อรักษา FK ของประวัติ
+
+### 3.9 User lockout
+`User.failedLoginAttempts` + `lockedUntil` — login ผิด 5 ครั้ง ล็อก 15 นาที (จัดการที่ service login)
+
+---
+
+## 4. Query ตัวอย่าง
+
+### 4.1 ยอดในคลัง (ใช้ snapshot)
+```sql
+SELECT "palletTypeId", condition, quantity
+FROM warehouse_stock
+WHERE quantity > 0
+ORDER BY "palletTypeId", condition;
 ```
 
-**ยอดนอกคลังรวมแยกตามแผนก (ไม่รวม WH-PL)**
+### 4.2 ยอดในคลัง (ตรวจกับ ledger — invariant check)
 ```sql
-SELECT d.code, d.name,
-       SUM(CASE WHEN m."toDepartmentId"   = d.id THEN m.quantity ELSE 0 END)
-     - SUM(CASE WHEN m."fromDepartmentId" = d.id THEN m.quantity ELSE 0 END) AS outstanding
-FROM stock_movements m
-JOIN departments d ON (m."toDepartmentId" = d.id OR m."fromDepartmentId" = d.id)
-WHERE d.code <> 'WH-PL'
-GROUP BY d.id, d.code, d.name
-HAVING SUM(CASE WHEN m."toDepartmentId" = d.id THEN m.quantity ELSE 0 END)
-     - SUM(CASE WHEN m."fromDepartmentId" = d.id THEN m.quantity ELSE 0 END) > 0;
+SELECT m."palletTypeId", m.condition,
+       SUM(CASE WHEN d."isWarehouse" THEN
+             CASE WHEN m."toDepartmentId"   = d.id THEN  m.quantity
+                  WHEN m."fromDepartmentId" = d.id THEN -m.quantity
+                  ELSE 0 END
+           ELSE 0 END) AS calculated_qty
+FROM   stock_movements m
+JOIN   departments d
+       ON  d.id IN (m."toDepartmentId", m."fromDepartmentId")
+       AND d."isWarehouse" = true
+GROUP  BY m."palletTypeId", m.condition;
+-- ค่าต้องเท่ากับ warehouse_stock.quantity (AC-14)
 ```
 
-**คำขอรออนุมัติที่ยัง reserve ยอดคลังอยู่**
+### 4.3 คำขอที่กำลัง reserve ยอดคลังอยู่ (soft-reserve)
 ```sql
-SELECT ri."palletTypeId", ri.condition, SUM(ri.quantity) AS reserved
-FROM request_items ri
-JOIN requests r ON r.id = ri."requestId"
-JOIN departments d ON d.id = r."fromDepartmentId" AND d.code = 'WH-PL'
-WHERE r.status IN ('PENDING', 'APPROVED')
-  AND r.type IN ('ISSUE_INTERNAL', 'WRITE_OFF')
-GROUP BY ri."palletTypeId", ri.condition;
+SELECT ri."palletTypeId", r.condition, SUM(ri.quantity) AS reserved
+FROM   request_items ri
+JOIN   requests r ON r.id = ri."requestId"
+WHERE  r.status IN ('PENDING_DEPT', 'PENDING_WAREHOUSE')
+   AND r.type   = 'ISSUE'
+GROUP  BY ri."palletTypeId", r.condition;
 ```
+
+### 4.4 ยอดที่เบิกได้จริง (available = snapshot − reserved)
+ใช้ `lib/services/request.ts::getAvailableBalance()`
+
+### 4.5 ยอดเบิก-คืน รายแผนก (dashboard)
+```sql
+SELECT d.name,
+       SUM(CASE WHEN m."toDepartmentId"   = d.id AND d."isWarehouse" = false
+                 AND wh_m."fromDepartmentId" IS NOT NULL
+                THEN m.quantity ELSE 0 END) AS issued,
+       SUM(CASE WHEN m."fromDepartmentId" = d.id AND d."isWarehouse" = false
+                THEN m.quantity ELSE 0 END) AS returned
+FROM   stock_movements m
+JOIN   departments d ON d.id IN (m."toDepartmentId", m."fromDepartmentId")
+WHERE  m."occurredAt" >= :from AND m."occurredAt" < :to
+GROUP  BY d.id, d.name;
+```
+
+---
+
+## 5. Index สำคัญ (performance)
+
+| Table | Index | เหตุผล |
+|---|---|---|
+| `users` | `(status)` | admin filter PENDING users |
+| `requests` | `(status, type)`, `(requesterId, status)`, `(createdAt)` | รายการคำขอ + queue อนุมัติ |
+| `stock_movements` | `(palletTypeId, condition)`, `(fromDepartmentId)`, `(toDepartmentId)`, `(occurredAt)` | dashboard aggregations |
+| `audit_logs` | `(entity, entityId)`, `(userId, createdAt)` | ตรวจย้อนรายการ |
+| `email_outbox` | `(status, createdAt)` | cron picker (PENDING FIFO) |
+| `warehouse_operations` | `(type, createdAt)` | dashboard แยกประเภท |
+| `notifications` | `(userId, createdAt)` | inbox ของ user |
+
+---
+
+## 6. Database connection
+
+- **Runtime** (Vercel): `DATABASE_URL` = Supabase Supavisor pooled (port 6543, transaction mode, `?pgbouncer=true&connection_limit=1`)
+- **Migration**: `DIRECT_URL` = direct connection (port 5432) — ใช้โดย `prisma migrate`
+- **RLS**: ไม่พึ่ง Supabase RLS สำหรับ business rule (ใช้ Prisma เป็นเดียว); ต้องปิดการเข้าถึงผ่าน anon key ที่ตั้ง policy เพื่อ safety
