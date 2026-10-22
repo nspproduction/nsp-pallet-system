@@ -11,6 +11,7 @@ export interface StepInput {
   stepOrder: number;
   name: string;
   approverIds: string[];
+  requesterPicks?: boolean;
 }
 
 export interface RouteInput {
@@ -25,10 +26,14 @@ export interface RouteInput {
 }
 
 // A step snapshot stored on the Request at submission time.
+// If the route step has requesterPicks=true, approverIds is narrowed to
+// the single approver chosen by the requester. The flag is also preserved
+// so downstream UI can show "chosen by requester".
 export interface StepSnapshot {
   stepOrder: number;
   name: string;
   approverIds: string[];
+  requesterPicks?: boolean;
 }
 
 // -----------------------------------------------------------------------
@@ -152,7 +157,8 @@ export async function upsertRoute(user: SessionUser, input: RouteInput) {
             create: sorted.map((s) => ({
               stepOrder: s.stepOrder,
               name: s.name,
-              approverIds: s.approverIds
+              approverIds: s.approverIds,
+              requesterPicks: s.requesterPicks ?? false
             }))
           }
         }
@@ -211,7 +217,8 @@ export async function resolveRoute(departmentId: string, requestType: RequestTyp
   return route.steps.map((s) => ({
     stepOrder: s.stepOrder,
     name: s.name,
-    approverIds: s.approverIds
+    approverIds: s.approverIds,
+    requesterPicks: s.requesterPicks
   }));
 }
 
@@ -244,4 +251,37 @@ export function findActableStep(stepSnapshot: StepSnapshot[], currentStepOrder: 
   if (!step) return null;
   if (!step.approverIds.includes(userId)) return null;
   return step;
+}
+
+/**
+ * Narrow a resolved step snapshot by the requester's picks. For every step
+ * that has requesterPicks=true and more than one candidate approver, the
+ * requester must supply a matching entry; the returned snapshot's approverIds
+ * is narrowed to just that chosen user. Single-candidate pick steps are
+ * passed through unchanged (auto-select).
+ *
+ * Throws HttpError(400) on: missing pick, pick not in approverIds, or pick
+ * equal to the requester themselves.
+ */
+export function narrowStepsByPicks(
+  steps: StepSnapshot[],
+  picks: { stepOrder: number; approverId: string }[] | undefined,
+  requesterId: string
+): StepSnapshot[] {
+  const map = new Map((picks ?? []).map((p) => [p.stepOrder, p.approverId]));
+  return steps.map((s) => {
+    if (!s.requesterPicks) return s;
+    if (s.approverIds.length <= 1) return s;
+    const pickedId = map.get(s.stepOrder);
+    if (!pickedId) {
+      throw new HttpError(400, `ขั้นที่ ${s.stepOrder} (${s.name}) กำหนดให้ผู้ขอเลือกผู้อนุมัติ 1 คน — กรุณาเลือกก่อนส่ง`);
+    }
+    if (!s.approverIds.includes(pickedId)) {
+      throw new HttpError(400, `ผู้อนุมัติที่เลือกในขั้นที่ ${s.stepOrder} ไม่ได้อยู่ในรายชื่อผู้อนุมัติของขั้นนั้น`);
+    }
+    if (pickedId === requesterId) {
+      throw new HttpError(400, `ขั้นที่ ${s.stepOrder} (${s.name}) — ไม่สามารถเลือกตัวเองเป็นผู้อนุมัติได้`);
+    }
+    return { ...s, approverIds: [pickedId] };
+  });
 }

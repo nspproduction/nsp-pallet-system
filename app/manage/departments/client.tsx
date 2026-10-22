@@ -11,6 +11,7 @@ interface Department {
   name: string;
   active: boolean;
   isWarehouse: boolean;
+  requiresReturnSource: boolean;
 }
 
 interface Section {
@@ -146,6 +147,7 @@ export function DepartmentEdit({ initial }: { initial: Department }) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         name: String(fd.get("name")).trim(),
+        requiresReturnSource: fd.get("requiresReturnSource") === "on",
       }),
     });
     setBusy(false);
@@ -172,6 +174,22 @@ export function DepartmentEdit({ initial }: { initial: Department }) {
               <span className="text-xs font-medium text-slate-600">ชื่อ</span>
               <input name="name" required defaultValue={initial.name} className={twMerge(INPUT_CLS, "mt-1")} />
             </label>
+            {!initial.isWarehouse && (
+              <label className="flex items-start gap-2 rounded-lg border border-indigo-100 bg-indigo-50/40 px-2.5 py-2 text-xs text-slate-700">
+                <input
+                  type="checkbox"
+                  name="requiresReturnSource"
+                  defaultChecked={initial.requiresReturnSource}
+                  className="mt-0.5 h-3.5 w-3.5 accent-indigo-600"
+                />
+                <span>
+                  <span className="font-medium text-indigo-800">ระบุที่มาของพาเลทเมื่อคืน</span>
+                  <span className="ml-1 text-slate-500">
+                    — เมื่อผู้ใช้แผนกนี้สร้างคำขอคืน ต้องเลือกว่าเป็นพาเลทจาก &quot;ใช้ภายใน&quot; หรือ &quot;ลูกค้า&quot;
+                  </span>
+                </span>
+              </label>
+            )}
             {initial.isWarehouse && (
               <p className="rounded bg-amber-50 px-2 py-1.5 text-xs text-amber-700">
                 แผนกนี้เป็นแผนกคลังพาเลทของระบบ · ไม่สามารถเปลี่ยนสถานะได้

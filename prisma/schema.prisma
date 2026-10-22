@@ -35,11 +35,14 @@ enum UserStatus {
 }
 
 model Department {
-  id          String   @id @default(cuid())
-  name        String
-  isWarehouse Boolean  @default(false)
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
+  id                    String   @id @default(cuid())
+  name                  String
+  isWarehouse           Boolean  @default(false)
+  // When true, RETURN requests created by this department's requesters
+  // must specify Request.returnSource (ใช้ภายใน / ลูกค้า).
+  requiresReturnSource  Boolean  @default(false)
+  active                Boolean  @default(true)
+  createdAt             DateTime @default(now())
 
   users          User[]
   sections       DepartmentSection[]
@@ -180,11 +183,15 @@ model ApprovalRoute {
 }
 
 model ApprovalStep {
-  id          String   @id @default(cuid())
-  routeId     String
-  stepOrder   Int
-  name        String
-  approverIds String[]
+  id             String   @id @default(cuid())
+  routeId        String
+  stepOrder      Int
+  name           String
+  approverIds    String[]
+  // When true, the requester must pick exactly one approver from approverIds
+  // at request-submission time. The snapshot stored on the Request is then
+  // narrowed to only that chosen approver.
+  requesterPicks Boolean  @default(false)
 
   route ApprovalRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
 
@@ -228,6 +235,13 @@ enum RequestType {
   RETURN // คืนเข้า (SPEC §6)
 }
 
+// Source of a returned pallet (only meaningful for RETURN requests from
+// departments that have Department.requiresReturnSource = true).
+enum ReturnSource {
+  INTERNAL // ใช้ภายใน
+  CUSTOMER // ลูกค้า
+}
+
 enum RequestStatus {
   DRAFT
   PENDING_DEPT      // รอ dept-step approver
@@ -257,6 +271,11 @@ model Request {
 
   // Condition for this request (1 condition per request — SPEC §6)
   condition PalletCondition?
+
+  // Source of returned pallets. Required at submission time only when
+  // type=RETURN AND the requester's department has requiresReturnSource=true.
+  // null for all historical rows and for non-RETURN requests.
+  returnSource ReturnSource?
 
   // Multi-step approval state
   currentStepOrder Int?  // null = at PENDING_WAREHOUSE / completed

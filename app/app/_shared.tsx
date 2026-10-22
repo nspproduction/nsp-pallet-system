@@ -75,6 +75,11 @@ export const CONDITION_LABEL: Record<string, string> = {
   DAMAGED: "เสีย"
 };
 
+export const RETURN_SOURCE_LABEL: Record<string, string> = {
+  INTERNAL: "ใช้ภายใน",
+  CUSTOMER: "ลูกค้า"
+};
+
 export interface RequestCardItem {
   id: string;
   palletType: { name: string };
@@ -87,6 +92,7 @@ export interface RequestCardData {
   type: string;
   status: string;
   condition?: string | null;
+  returnSource?: string | null;
   createdAt: string;
   fromDepartment?: { name: string } | null;
   toDepartment?: { name: string } | null;
@@ -110,6 +116,11 @@ export function RequestCard({ r, trailing, onClick }: { r: RequestCardData; trai
           {r.condition && r.condition !== "GOOD" && (
             <span className="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 border border-amber-200">
               {CONDITION_LABEL[r.condition] ?? r.condition}
+            </span>
+          )}
+          {r.type === "RETURN" && (
+            <span className="shrink-0 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-700 border border-indigo-200">
+              {RETURN_SOURCE_LABEL[r.returnSource ?? "INTERNAL"]}
             </span>
           )}
           <span className="truncate font-mono text-[11px] text-slate-400">{r.docNo}</span>

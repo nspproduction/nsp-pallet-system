@@ -23,6 +23,11 @@ const CONDITION_LABEL: Record<string, string> = {
   DAMAGED: "เสีย",
 };
 
+const RETURN_SOURCE_LABEL: Record<string, string> = {
+  INTERNAL: "ใช้ภายใน",
+  CUSTOMER: "ลูกค้า",
+};
+
 export default async function Page({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
   const { id } = await params;
@@ -74,6 +79,9 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
                 }
               />
               <Row label="วันที่ต้องการ" value={r.neededDate ? r.neededDate.toLocaleDateString("th-TH") : "-"} />
+              {r.type === "RETURN" && (
+                <Row label="ที่มาของพาเลท" value={RETURN_SOURCE_LABEL[r.returnSource ?? "INTERNAL"]} />
+              )}
               <Row label="วัตถุประสงค์" value={r.purpose ?? "-"} full />
               <Row label="หมายเหตุ" value={r.note ?? "-"} full />
             </dl>

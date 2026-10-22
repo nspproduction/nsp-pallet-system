@@ -15,10 +15,17 @@ export interface MeResponse {
     id: string;
     fullName: string;
     roles: string[];
-    department?: { id: string; name: string; isWarehouse: boolean } | null;
+    department?: { id: string; name: string; isWarehouse: boolean; requiresReturnSource?: boolean } | null;
     section?: Section | null;
   };
 }
+
+export type ReturnSource = "INTERNAL" | "CUSTOMER";
+
+export const RETURN_SOURCE_LABEL: Record<ReturnSource, string> = {
+  INTERNAL: "ใช้ภายใน",
+  CUSTOMER: "ลูกค้า"
+};
 
 export type Mode = "ISSUE_OUT" | "RETURN_IN";
 export type Condition = "GOOD" | "PENDING_REPAIR" | "DAMAGED";
@@ -38,6 +45,17 @@ export interface BalanceRow {
 export interface OperatingStatus {
   isOpen: boolean;
   nextOpenAt?: string;
+}
+
+export interface RouteStep {
+  stepOrder: number;
+  name: string;
+  requesterPicks: boolean;
+  approvers: { id: string; fullName: string }[];
+}
+
+export interface MyRouteResponse {
+  steps: RouteStep[];
 }
 
 export const MODE_LABEL: Record<Mode, string> = {

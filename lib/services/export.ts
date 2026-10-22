@@ -5,8 +5,15 @@ import {
   getIssueReturnByDepartment,
   getIssueReturnByPerson,
   getRepairQuality,
+  getReturnBySource,
+  type ReturnSourceKey,
 } from "@/lib/services/dashboard";
 import { getWarehouseConditionSummary } from "@/lib/services/warehouse";
+
+const RETURN_SOURCE_LABEL: Record<ReturnSourceKey, string> = {
+  INTERNAL: "ใช้ภายใน",
+  CUSTOMER: "ลูกค้า",
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -30,12 +37,13 @@ function numFmt(ws: ExcelJS.Worksheet, colIndex: number, fmt = "#,##0") {
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export async function exportDashboardExcel(filter?: DashboardFilter): Promise<ArrayBuffer> {
-  const [warehouse, movements, deptStats, personStats, repairStats] = await Promise.all([
+  const [warehouse, movements, deptStats, personStats, repairStats, returnBySource] = await Promise.all([
     getWarehouseConditionSummary(),
     getWarehouseMovements(filter),
     getIssueReturnByDepartment(filter),
     getIssueReturnByPerson(filter),
     getRepairQuality(filter),
+    getReturnBySource(filter),
   ]);
 
   const wb = new ExcelJS.Workbook();
@@ -102,6 +110,21 @@ export async function exportDashboardExcel(filter?: DashboardFilter): Promise<Ar
 
   for (const r of personStats) {
     wsPerson.addRow([r.fullName, r.departmentName, r.requestCount, r.issueQty, r.returnQty]);
+  }
+
+  // ── Sheet 4b: คืนตามที่มา ────────────────────────────────────────────────
+  const wsSrc = wb.addWorksheet("คืนตามที่มา");
+  headerRow(wsSrc, ["ที่มา", "คืน-ดี", "คืน-รอซ่อม", "คืน-เสีย"]);
+  setColWidths(wsSrc, [18, 14, 16, 14]);
+  for (let c = 2; c <= 4; c++) numFmt(wsSrc, c);
+
+  for (const r of returnBySource) {
+    wsSrc.addRow([
+      RETURN_SOURCE_LABEL[r.source],
+      r.returnGood,
+      r.returnRepair,
+      r.returnDamaged,
+    ]);
   }
 
   // ── Sheet 5: คุณภาพการซ่อม ───────────────────────────────────────────────

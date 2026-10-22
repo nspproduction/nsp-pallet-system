@@ -9,6 +9,7 @@ import { writeAudit } from "@/lib/services/audit";
 const Patch = z.object({
   name: z.string().min(1).max(120).optional(),
   active: z.boolean().optional(),
+  requiresReturnSource: z.boolean().optional(),
 });
 
 export async function PATCH(req: Request, ctx: RouteContext<"/api/departments/[id]">) {

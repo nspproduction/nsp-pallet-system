@@ -33,11 +33,16 @@ export default async function Page() {
             {list.map((d) => (
               <tr key={d.id}>
                 <td className="px-4 py-3 font-medium text-slate-900">
-                  <span className="flex items-center gap-2">
+                  <span className="flex flex-wrap items-center gap-2">
                     {d.name}
                     {d.isWarehouse && (
                       <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-amber-200">
                         ระบบ
+                      </span>
+                    )}
+                    {d.requiresReturnSource && (
+                      <span className="inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 ring-1 ring-indigo-200">
+                        ระบุที่มา (เมื่อคืน)
                       </span>
                     )}
                   </span>
@@ -62,7 +67,7 @@ export default async function Page() {
                     {!d.isWarehouse && (
                       <DepartmentToggle id={d.id} active={d.active} name={d.name} />
                     )}
-                    <DepartmentEdit initial={{ id: d.id, name: d.name, active: d.active, isWarehouse: d.isWarehouse }} />
+                    <DepartmentEdit initial={{ id: d.id, name: d.name, active: d.active, isWarehouse: d.isWarehouse, requiresReturnSource: d.requiresReturnSource }} />
                   </div>
                 </td>
               </tr>

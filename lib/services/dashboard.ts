@@ -132,6 +132,69 @@ export async function getWarehouseMovements(filter?: DashboardFilter): Promise<M
   return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
 }
 
+// ─── Return by source (คืนตามที่มา: ใช้ภายใน / ลูกค้า) ──────────────────────
+
+export type ReturnSourceKey = "INTERNAL" | "CUSTOMER";
+
+export interface ReturnSourceRow {
+  source: ReturnSourceKey;
+  returnGood: number;
+  returnRepair: number;
+  returnDamaged: number;
+}
+
+/**
+ * Aggregate RETURN movements grouped by Request.returnSource × condition.
+ * Every new RETURN carries an explicit source (INTERNAL by default), so
+ * movements with a null source only appear for pre-feature historical rows
+ * and are skipped here — operators should backfill if needed.
+ */
+export async function getReturnBySource(filter?: DashboardFilter): Promise<ReturnSourceRow[]> {
+  const occurredAt = dateWhere(filter);
+  const palletTypeId = filter?.palletTypeId;
+  const departmentId = filter?.departmentId;
+
+  const movements = await prisma.stockMovement.findMany({
+    where: {
+      request: {
+        type: "RETURN",
+        returnSource: { not: null },
+        ...(departmentId ? { fromDepartmentId: departmentId } : {})
+      },
+      ...(occurredAt ? { occurredAt } : {}),
+      ...(palletTypeId ? { palletTypeId } : {})
+    },
+    select: {
+      quantity: true,
+      condition: true,
+      request: { select: { returnSource: true } }
+    }
+  });
+
+  const empty = (source: ReturnSourceKey): ReturnSourceRow => ({
+    source,
+    returnGood: 0,
+    returnRepair: 0,
+    returnDamaged: 0
+  });
+
+  const rows: Record<ReturnSourceKey, ReturnSourceRow> = {
+    INTERNAL: empty("INTERNAL"),
+    CUSTOMER: empty("CUSTOMER")
+  };
+
+  for (const m of movements) {
+    const key = m.request?.returnSource;
+    if (!key) continue;
+    const row = rows[key];
+    if (m.condition === "GOOD") row.returnGood += m.quantity;
+    else if (m.condition === "PENDING_REPAIR") row.returnRepair += m.quantity;
+    else if (m.condition === "DAMAGED") row.returnDamaged += m.quantity;
+  }
+
+  return [rows.INTERNAL, rows.CUSTOMER];
+}
+
 // ─── Per-department stats (SPEC §12: รายแผนก) ────────────────────────────────
 
 export interface DeptStatRow {

@@ -241,9 +241,23 @@ enum EmailStatus     { PENDING SENT FAILED }
 `Department`, `DepartmentSection`, `PalletType`, `ApprovalRoute`, `ApprovalStep` (via route), `OperatingHours`, `HolidayDate`
 
 ### 4.6 Snapshot fields
-- `Request.stepSnapshot: Json` = `[{stepOrder, name, approverIds}]` ณ เวลา submit
+- `Request.stepSnapshot: Json` = `[{stepOrder, name, approverIds, requesterPicks?}]` ณ เวลา submit
+  - ถ้า step มี `requesterPicks=true` และมี approver > 1 คน → `approverIds` ถูก narrow เหลือเฉพาะคนที่ผู้ขอเลือก
+  - ถ้ามี approver 1 คน → auto-select เงียบๆ (ผู้ขอไม่ต้องเลือก)
 - `Request.fromSectionId / toSectionId` = snapshot ของ `user.sectionId` ที่ตอนสร้าง
 - `RequestRevision.before / after: Json` = snapshot ของ items ก่อน/หลังแก้
+
+### 4.7 Return source (ที่มาของพาเลทที่คืน)
+- `Department.requiresReturnSource: boolean` (default false) — admin ติ๊กต่อแผนก
+- `enum ReturnSource { INTERNAL, CUSTOMER }` — label ไทย: "ใช้ภายใน" / "ลูกค้า"
+- `Request.returnSource: ReturnSource?` (nullable เฉพาะใน DB เพื่อรองรับข้อมูลเก่าและคำขอที่ไม่ใช่ RETURN)
+  - คำขอ RETURN ใหม่ทุกใบจะมี `returnSource` เสมอ:
+    - แผนก `requiresReturnSource = true` → ผู้ขอต้องเลือก INTERNAL หรือ CUSTOMER (ไม่งั้น throw 400)
+    - แผนก `requiresReturnSource = false` → default เป็น `INTERNAL` อัตโนมัติ (silently)
+  - คำขอ ISSUE → `returnSource = null` เสมอ (ถ้าส่งค่ามา throw 400)
+  - ของเก่า (ก่อนเพิ่มฟีเจอร์) `returnSource = null` → UI แสดงเป็น "ใช้ภายใน" fallback; Dashboard/Excel จะข้าม row นี้ (ถ้าอยากนับต้อง backfill ด้วยมือ)
+  - ถ้าแผนกเปลี่ยนธงหลัง submit → **ไม่ validate ย้อนหลัง** (ค่าเดิมเก็บไว้)
+  - รายงาน / Dashboard / Excel export แสดง breakdown "คืนตามที่มา" (dept-agnostic) โดย filter `returnSource IS NOT NULL` และ group `StockMovement → Request → returnSource`
 
 ---
 
@@ -429,6 +443,10 @@ export async function moveStock(tx: TxClient, p: MoveStockParams): Promise<void>
 3. ตรวจประเภทพาเลททุก item ว่า `active = true`
 4. หา warehouse department (`isWarehouse: true, active: true`) ถ้าไม่มี → 500
 5. ถ้า `type = RETURN` ต้องมี `condition`
+5a. ตรวจ `returnSource` ผ่าน `validateReturnSource(type, dept.requiresReturnSource, input.returnSource)`:
+    - `type = RETURN` + `dept.requiresReturnSource = true` + no returnSource → throw 400
+    - `type ≠ RETURN` + ส่ง returnSource มา → throw 400
+    - อื่นๆ → ค่าถูก normalize เป็น null (silently dropped เมื่อ dept flag off)
 6. **Auto-fill from/to:**
    - `ISSUE`: from = warehouse, to = `user.department / user.section`
    - `RETURN`: from = `user.department / user.section`, to = warehouse
@@ -438,6 +456,7 @@ export async function moveStock(tx: TxClient, p: MoveStockParams): Promise<void>
 10. Resolve approval route:
     - ถ้า `type ∈ ROUTABLE` และ `user.departmentId`:
       - `resolveRoute(departmentId, type)` → ถ้า route = empty → `PENDING_WAREHOUSE` (เฉพาะกรณีไม่มี step; ปัจจุบัน resolve throw ถ้าไม่มี route — คอนเฟิร์มว่าแผนกต้องตั้ง route ก่อน)
+      - `narrowStepsByPicks(snapshot, input.stepPicks, user.id)` — สำหรับ step ที่มี `requesterPicks=true` และ approver > 1 คน จะ narrow `approverIds` ให้เหลือเฉพาะ `stepPicks[i].approverId` ที่ผู้ขอเลือก; ถ้าไม่ส่งมา → throw 400; ถ้าเลือกตัวเอง → throw 400 (ป้องกัน deadlock); ถ้า approver = 1 คน → auto-select
       - ถ้ามี steps → `PENDING_DEPT`, `currentStepOrder = 1`
 11. ใน `prisma.$transaction`:
     - `nextDocNo(type)` → create `Request` พร้อม items + stepSnapshot
@@ -546,7 +565,7 @@ available = WarehouseStock.quantity − SUM(RequestItem.quantity)
 
 - ค้น `ApprovalRoute(departmentId, requestType, isActive: true)` + steps ordered by `stepOrder`
 - ถ้าไม่พบ → throw `400 "แผนก X ยังไม่ได้กำหนด approval route สำหรับ Y"`
-- Return `[{stepOrder, name, approverIds}]`
+- Return `[{stepOrder, name, approverIds, requesterPicks}]`
 
 ### 7.12 `upsertRoute()` — Admin
 
@@ -555,6 +574,7 @@ available = WarehouseStock.quantity − SUM(RequestItem.quantity)
 - `stepOrder` ต้องเรียงต่อกันจาก 1
 - Step name ต้องไม่ว่างหลัง trim
 - `approverIds` อย่างน้อย 1
+- `requesterPicks: boolean` (optional, default false) — ถ้า true ผู้ขอจะต้องเลือกผู้อนุมัติ 1 คน ตอนสร้างคำขอ (ขั้นที่มี approver เพียง 1 คน จะ auto-select)
 - ตรวจ approver ทุกคนต้อง: `status = ACTIVE` + มี role `DEPT_APPROVER`
 - ตรวจ `(departmentId, requestType)` ไม่ซ้ำ (ลบของเดิมก่อน หรือ update ตาม id)
 - Transaction: delete old steps → create new steps
@@ -702,7 +722,8 @@ const UpsertRouteInput = z.object({
   steps: z.array(z.object({
     stepOrder: z.number().int().positive(),
     name: z.string().min(1).max(100),
-    approverIds: z.array(z.string()).min(1)
+    approverIds: z.array(z.string()).min(1),
+    requesterPicks: z.boolean().optional()
   })).min(1).max(10)
 });
 ```

@@ -6,7 +6,7 @@ import { ConfirmDialog } from "@/app/_components/dialogs";
 
 interface Department { id: string; name: string }
 interface Approver { id: string; fullName: string; departmentId: string | null }
-interface StepData { stepOrder: number; name: string; approverIds: string[] }
+interface StepData { stepOrder: number; name: string; approverIds: string[]; requesterPicks?: boolean }
 interface RouteData {
   id: string;
   departmentId: string;
@@ -159,7 +159,14 @@ export function ApprovalRoutesClient({
                     {s.stepOrder}
                   </span>
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-slate-800">{s.name}</p>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <p className="text-sm font-medium text-slate-800">{s.name}</p>
+                      {s.requesterPicks && (
+                        <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-700 border border-indigo-200">
+                          ผู้ขอเลือก 1 คน
+                        </span>
+                      )}
+                    </div>
                     <p className="mt-0.5 text-[11px] text-slate-500">
                       {s.approverIds.length} คน ·{" "}
                       {s.approverIds
@@ -256,8 +263,8 @@ function RouteFormModal({
 
   const [steps, setSteps] = useState<StepData[]>(
     initial?.steps.length
-      ? initial.steps
-      : [{ stepOrder: 1, name: "หัวหน้าแผนก", approverIds: [] }],
+      ? initial.steps.map((s) => ({ ...s, requesterPicks: s.requesterPicks ?? false }))
+      : [{ stepOrder: 1, name: "หัวหน้าแผนก", approverIds: [], requesterPicks: false }],
   );
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -285,7 +292,7 @@ function RouteFormModal({
   }
 
   function addStep() {
-    setSteps([...steps, { stepOrder: steps.length + 1, name: "", approverIds: [] }]);
+    setSteps([...steps, { stepOrder: steps.length + 1, name: "", approverIds: [], requesterPicks: false }]);
   }
   function removeStep(i: number) {
     const next = steps.filter((_, idx) => idx !== i).map((s, idx) => ({ ...s, stepOrder: idx + 1 }));
@@ -453,6 +460,20 @@ function RouteFormModal({
                     );
                   })}
                 </div>
+                <label className="mt-2 flex items-start gap-2 rounded-lg border border-indigo-100 bg-indigo-50/40 px-2.5 py-2 text-[11px] text-slate-700">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-3.5 w-3.5 accent-indigo-600"
+                    checked={step.requesterPicks ?? false}
+                    onChange={(e) => updateStep(i, { requesterPicks: e.target.checked })}
+                  />
+                  <span>
+                    <span className="font-medium text-indigo-800">ให้ผู้ขอเลือกผู้อนุมัติ 1 คน</span>
+                    <span className="ml-1 text-slate-500">
+                      — ถ้าเปิด ตอนสร้างคำขอจะต้องเลือก 1 คนจากรายชื่อข้างบน และคำขอจะส่งหาเฉพาะคนที่เลือก
+                    </span>
+                  </span>
+                </label>
               </div>
               );
             })}

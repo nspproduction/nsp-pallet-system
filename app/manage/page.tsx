@@ -4,9 +4,11 @@ import {
   getIssueReturnByDepartment,
   getIssueReturnByPerson,
   getRepairQuality,
+  getReturnBySource,
   getTrend,
   type DashboardFilter,
   type TrendGranularity,
+  type ReturnSourceKey,
 } from "@/lib/services/dashboard";
 import { getWarehouseConditionSummary } from "@/lib/services/warehouse";
 import { requireUser } from "@/lib/auth/current-user";
@@ -22,6 +24,11 @@ const TYPE_LABEL: Record<string, string> = {
   RETURN: "คืนเข้า",
   WRITE_OFF: "ตัดจำหน่าย",
   ADJUSTMENT: "ปรับยอด",
+};
+
+const RETURN_SOURCE_LABEL: Record<ReturnSourceKey, string> = {
+  INTERNAL: "ใช้ภายใน",
+  CUSTOMER: "ลูกค้า",
 };
 
 export const dynamic = "force-dynamic";
@@ -54,6 +61,7 @@ export default async function AdminDashboard({ searchParams }: PageProps) {
     deptStats,
     personStats,
     repairStats,
+    returnBySource,
     trend,
     recentPending,
     recentAudit,
@@ -69,6 +77,7 @@ export default async function AdminDashboard({ searchParams }: PageProps) {
     getIssueReturnByDepartment(filter),
     getIssueReturnByPerson(filter),
     getRepairQuality(filter),
+    getReturnBySource(filter),
     getTrend(granularity, filter),
     prisma.request.findMany({
       where: { status: { in: ["PENDING_DEPT", "PENDING_WAREHOUSE"] } },
@@ -221,6 +230,36 @@ export default async function AdminDashboard({ searchParams }: PageProps) {
               </tbody>
             </table>
           )}
+        </div>
+      </section>
+
+      {/* ─── 5b. Return by source (คืนตามที่มา) ───────────────────────────── */}
+      <section className="rounded-2xl border border-border bg-white p-6 shadow-sm">
+        <h2 className="text-lg font-semibold text-slate-900">คืนตามที่มา</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          แยกตามแหล่งที่มาของพาเลทที่คืนเข้าคลัง (เฉพาะคำขอ RETURN · แผนกที่ไม่ตั้งค่า &quot;ระบุที่มา&quot; จะถือว่าเป็นใช้ภายในโดยอัตโนมัติ)
+        </p>
+        <div className="mt-5 overflow-x-auto">
+          <table className="w-full min-w-[420px] text-sm">
+            <thead>
+              <tr className="border-b border-slate-100 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                <th className="pb-2 pr-3">ที่มา</th>
+                <th className="pb-2 pr-3 text-right">คืน-ดี</th>
+                <th className="pb-2 pr-3 text-right">คืน-รอซ่อม</th>
+                <th className="pb-2 text-right">คืน-เสีย</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {returnBySource.map((r) => (
+                <tr key={r.source} className="hover:bg-slate-50/50">
+                  <td className="py-2 pr-3 text-slate-800">{RETURN_SOURCE_LABEL[r.source]}</td>
+                  <Num v={r.returnGood} />
+                  <Num v={r.returnRepair} warn />
+                  <Num v={r.returnDamaged} neg />
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </section>
 

@@ -9,7 +9,7 @@ export async function GET() {
     user.departmentId
       ? prisma.department.findUnique({
           where: { id: user.departmentId },
-          select: { id: true, name: true, isWarehouse: true },
+          select: { id: true, name: true, isWarehouse: true, requiresReturnSource: true },
         })
       : Promise.resolve(null),
     user.sectionId

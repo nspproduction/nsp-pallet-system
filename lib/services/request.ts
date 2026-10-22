@@ -1,10 +1,10 @@
 import { Prisma } from "@prisma/client";
-import type { PalletCondition, RequestType } from "@prisma/client";
+import type { PalletCondition, RequestType, ReturnSource } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { HttpError } from "@/lib/auth/current-user";
 import { nextDocNo, nextWarehouseOpDocNo } from "@/lib/services/docno";
 import { writeAudit } from "@/lib/services/audit";
-import { resolveRoute, findActableStep } from "@/lib/services/approval-route";
+import { resolveRoute, findActableStep, narrowStepsByPicks } from "@/lib/services/approval-route";
 import type { StepSnapshot } from "@/lib/services/approval-route";
 import { checkOperatingHours } from "@/lib/services/operating-hours";
 import { queueEmail, buildRequestEmail } from "@/lib/services/email-outbox";
@@ -34,6 +34,7 @@ function appUrl() {
 export interface CreateRequestInput {
   type: RequestType;
   condition?: PalletCondition | null;
+  returnSource?: ReturnSource | null;
   fromDepartmentId?: string | null;
   fromSectionId?: string | null;
   toDepartmentId?: string | null;
@@ -46,6 +47,10 @@ export interface CreateRequestInput {
     quantity: number;
     note?: string | null;
   }[];
+  // Requester's choice of approver for steps where the route has
+  // requesterPicks=true. Each entry narrows the stored snapshot's
+  // approverIds to the single picked user for that stepOrder.
+  stepPicks?: { stepOrder: number; approverId: string }[];
 }
 
 // -----------------------------------------------------------------------
@@ -61,6 +66,34 @@ async function getWarehouseDept() {
     throw new HttpError(500, "ยังไม่ได้ตั้งค่าแผนกคลังพาเลท (isWarehouse = true)");
   }
   return dept;
+}
+
+/**
+ * Validate Request.returnSource against the requester's department flag.
+ * - type ≠ RETURN: returnSource must be absent → returns null (throws if set)
+ * - type = RETURN + dept.requiresReturnSource = true: must be set → returns value
+ * - type = RETURN + dept.requiresReturnSource = false: defaults to INTERNAL
+ *   (every RETURN therefore carries an explicit source, so reports/aggregates
+ *   never need a null fallback)
+ */
+export function validateReturnSource(
+  type: RequestType,
+  deptRequiresReturnSource: boolean,
+  inputReturnSource: ReturnSource | null
+): ReturnSource | null {
+  if (type === "RETURN") {
+    if (deptRequiresReturnSource) {
+      if (!inputReturnSource) {
+        throw new HttpError(400, "แผนกของคุณต้องระบุที่มาของพาเลท (ใช้ภายใน / ลูกค้า) เมื่อคืน");
+      }
+      return inputReturnSource;
+    }
+    return "INTERNAL";
+  }
+  if (inputReturnSource) {
+    throw new HttpError(400, "ที่มาของพาเลทใช้ได้เฉพาะกับคำขอคืน");
+  }
+  return null;
 }
 
 /** Current GOOD balance at the warehouse, minus in-flight outflow requests. */
@@ -113,6 +146,19 @@ export async function createRequest(user: SessionUser, input: CreateRequestInput
   if (SINGLE_CONDITION.has(input.type) && !input.condition) {
     throw new HttpError(400, "คำขอคืนเข้าต้องระบุสภาพพาเลท");
   }
+
+  // ---- Validate returnSource against requester's department flag ----
+  const requesterDept = user.departmentId
+    ? await prisma.department.findUnique({
+        where: { id: user.departmentId },
+        select: { requiresReturnSource: true }
+      })
+    : null;
+  const returnSource = validateReturnSource(
+    input.type,
+    requesterDept?.requiresReturnSource ?? false,
+    input.returnSource ?? null
+  );
 
   // ---- Auto-fill from/to departments ----
   let fromDepartmentId = input.fromDepartmentId ?? null;
@@ -178,6 +224,7 @@ export async function createRequest(user: SessionUser, input: CreateRequestInput
   if (ROUTABLE.has(input.type) && user.departmentId) {
     stepSnapshot = await resolveRoute(user.departmentId, input.type);
     if (stepSnapshot.length > 0) {
+      stepSnapshot = narrowStepsByPicks(stepSnapshot, input.stepPicks, user.id);
       initialStatus = "PENDING_DEPT";
       currentStepOrder = 1;
     }
@@ -191,6 +238,7 @@ export async function createRequest(user: SessionUser, input: CreateRequestInput
         docNo,
         type: input.type,
         condition: input.condition ?? null,
+        returnSource,
         status: initialStatus,
         requesterId: user.id,
         fromDepartmentId,

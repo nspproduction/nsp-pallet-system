@@ -7,6 +7,7 @@ const StepSchema = z.object({
   stepOrder: z.coerce.number().int().positive(),
   name: z.string().trim().min(1).max(80),
   approverIds: z.array(z.string()).min(1),
+  requesterPicks: z.boolean().optional(),
 });
 
 const Body = z.object({

@@ -11,9 +11,12 @@ const StatusEnum = z.enum(["DRAFT", "PENDING_DEPT", "PENDING_WAREHOUSE", "COMPLE
 
 const ConditionEnum = z.enum(["GOOD", "PENDING_REPAIR", "DAMAGED"]);
 
+const ReturnSourceEnum = z.enum(["INTERNAL", "CUSTOMER"]);
+
 const Create = z.object({
   type: RequestTypeEnum,
   condition: ConditionEnum.optional().nullable(),
+  returnSource: ReturnSourceEnum.optional().nullable(),
   fromDepartmentId: z.string().optional().nullable(),
   fromSectionId: z.string().optional().nullable(),
   toDepartmentId: z.string().optional().nullable(),
@@ -29,7 +32,15 @@ const Create = z.object({
         note: z.string().max(200).optional().nullable()
       })
     )
-    .min(1)
+    .min(1),
+  stepPicks: z
+    .array(
+      z.object({
+        stepOrder: z.coerce.number().int().positive(),
+        approverId: z.string().min(1)
+      })
+    )
+    .optional()
 });
 
 export async function GET(req: Request) {

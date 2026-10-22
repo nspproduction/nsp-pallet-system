@@ -13,7 +13,7 @@ import { Skeleton } from "@/app/_components/ui";
 import { safeFetchJson } from "../../_fetch";
 
 // Types & constants
-import { Mode, Condition, Item, BalanceRow, OperatingStatus, MeResponse, PalletType, PALETTE } from "./_types";
+import { Mode, Condition, Item, BalanceRow, OperatingStatus, MeResponse, PalletType, PALETTE, MyRouteResponse, RouteStep, ReturnSource } from "./_types";
 
 // Sub-components
 import { ModeTabs } from "./_ModeTabs";
@@ -22,6 +22,8 @@ import { ConditionPicker } from "./_ConditionPicker";
 import { ItemsSection } from "./_ItemsSection";
 import { AttachmentPicker } from "./_AttachmentPicker";
 import { MetaFields } from "./_MetaFields";
+import { ApproverPicker } from "./_ApproverPicker";
+import { ReturnSourcePicker } from "./_ReturnSourcePicker";
 
 /** Set to true to re-enable file attachments on the request form */
 const ATTACHMENT_ENABLED = false;
@@ -45,6 +47,9 @@ export default function Page() {
   const [createdId, setCreatedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [opStatus, setOpStatus] = useState<OperatingStatus | null>(null);
+  const [routeSteps, setRouteSteps] = useState<RouteStep[]>([]);
+  const [approverPicks, setApproverPicks] = useState<Record<number, string>>({});
+  const [returnSource, setReturnSource] = useState<ReturnSource | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -69,6 +74,24 @@ export default function Page() {
       setLoading(false);
     })();
   }, []);
+
+  // Fetch route for the current mode so we know which steps require a pick.
+  // Also prefill picks for steps that have a single candidate (auto-select).
+  useEffect(() => {
+    const type = mode === "ISSUE_OUT" ? "ISSUE" : "RETURN";
+    void (async () => {
+      const r = await safeFetchJson<MyRouteResponse>(`/api/approval-routes/mine?type=${type}`);
+      const steps = r.data?.steps ?? [];
+      setRouteSteps(steps);
+      const prefill: Record<number, string> = {};
+      for (const s of steps) {
+        if (s.requesterPicks && s.approvers.length === 1) {
+          prefill[s.stepOrder] = s.approvers[0].id;
+        }
+      }
+      setApproverPicks(prefill);
+    })();
+  }, [mode]);
 
   const dept = me?.user?.department ?? null;
   const section = me?.user?.section ?? null;
@@ -101,12 +124,18 @@ export default function Page() {
 
     const type = mode === "ISSUE_OUT" ? "ISSUE" : "RETURN";
     const condition: Condition = mode === "RETURN_IN" ? returnCondition : "GOOD";
+    const stepPicks = routeSteps
+      .filter((s) => s.requesterPicks)
+      .map((s) => ({ stepOrder: s.stepOrder, approverId: approverPicks[s.stepOrder] }))
+      .filter((p) => Boolean(p.approverId));
     const payload = {
       type,
       condition,
+      returnSource: type === "RETURN" ? returnSource : null,
       neededDate: neededDate || null,
       purpose: purpose || null,
-      items: cleaned.map((it) => ({ palletTypeId: it.palletTypeId, quantity: it.quantity }))
+      items: cleaned.map((it) => ({ palletTypeId: it.palletTypeId, quantity: it.quantity })),
+      stepPicks
     };
 
     setBusy(true);
@@ -159,6 +188,12 @@ export default function Page() {
       return it.quantity > (warehouseBalance[key] ?? 0);
     });
 
+  const missingPick = routeSteps.find(
+    (s) => s.requesterPicks && s.approvers.length > 1 && !approverPicks[s.stepOrder]
+  );
+  const needsReturnSource = mode === "RETURN_IN" && Boolean(dept?.requiresReturnSource);
+  const missingReturnSource = needsReturnSource && returnSource === null;
+
   const validationHint = deptMissing
     ? "บัญชีของคุณยังไม่ได้ผูกกับแผนก"
     : validItems.length === 0
@@ -169,7 +204,11 @@ export default function Page() {
           ? "มีรายการที่จำนวนเกินยอดคงเหลือในคลัง"
           : !neededDate
             ? "กรุณาเลือกวันที่ต้องการ"
-            : null;
+            : missingPick
+              ? `กรุณาเลือกผู้อนุมัติ: ขั้นที่ ${missingPick.stepOrder} ${missingPick.name}`
+              : missingReturnSource
+                ? "กรุณาเลือกที่มาของพาเลท (ใช้ภายใน / ลูกค้า)"
+                : null;
   const canSubmit = !busy && validationHint === null;
 
   if (loading) {
@@ -249,6 +288,10 @@ export default function Page() {
 
         {mode === "RETURN_IN" && <ConditionPicker value={returnCondition} onChange={setReturnCondition} />}
 
+        {needsReturnSource && (
+          <ReturnSourcePicker value={returnSource} onChange={setReturnSource} palette={palette} />
+        )}
+
         <ItemsSection
           items={items}
           palletTypes={palletTypes}
@@ -263,6 +306,16 @@ export default function Page() {
         />
 
         <MetaFields neededDate={neededDate} purpose={purpose} onDateChange={setNeededDate} onPurposeChange={setPurpose} palette={palette} />
+
+        <ApproverPicker
+          steps={routeSteps}
+          picks={approverPicks}
+          onPickChange={(stepOrder, approverId) =>
+            setApproverPicks((prev) => ({ ...prev, [stepOrder]: approverId }))
+          }
+          currentUserId={me?.user?.id ?? null}
+          palette={palette}
+        />
 
         {ATTACHMENT_ENABLED && <AttachmentPicker files={files} onChange={setFiles} palette={palette} />}
         {ATTACHMENT_ENABLED && uploadStatus && <p className="rounded-lg bg-brand-50 p-3 text-xs text-brand-700">{uploadStatus}</p>}

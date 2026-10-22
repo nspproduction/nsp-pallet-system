@@ -3,7 +3,7 @@
 import { startTransition, useCallback, useEffect, useState, use } from "react";
 import { twMerge } from "tailwind-merge";
 import { ConfirmDialog } from "@/app/_components/dialogs";
-import { LiffTopBar, StatusPill, TYPE_LABEL, CONDITION_LABEL } from "../../_shared";
+import { LiffTopBar, StatusPill, TYPE_LABEL, CONDITION_LABEL, RETURN_SOURCE_LABEL } from "../../_shared";
 import { Skeleton } from "@/app/_components/ui";
 import { ImageViewer, useAttachmentUrls } from "@/app/_components/image-viewer";
 
@@ -35,8 +35,10 @@ interface ReqDetail {
   purpose: string | null;
   note: string | null;
   condition: string | null;
-  stepSnapshot: Array<{ stepOrder: number; name: string }> | null;
+  returnSource: string | null;
+  stepSnapshot: Array<{ stepOrder: number; name: string; approverIds?: string[]; requesterPicks?: boolean }> | null;
   currentStepOrder: number | null;
+  approverNames?: Record<string, string>;
   requester: { fullName: string };
   fromDepartment: { name: string } | null;
   fromSection: { name: string } | null;
@@ -209,11 +211,18 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
         <div className="rounded-2xl border border-border bg-white p-4">
           <div className="flex items-center justify-between">
             <p className="text-sm font-semibold text-slate-900">รายการ</p>
-            {r.condition && (
-              <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-600">
-                สภาพ: {CONDITION_LABEL[r.condition] ?? r.condition}
-              </span>
-            )}
+            <div className="flex items-center gap-1.5">
+              {r.condition && (
+                <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-600">
+                  สภาพ: {CONDITION_LABEL[r.condition] ?? r.condition}
+                </span>
+              )}
+              {r.type === "RETURN" && (
+                <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-[11px] font-medium text-indigo-700 border border-indigo-200">
+                  ที่มา: {RETURN_SOURCE_LABEL[r.returnSource ?? "INTERNAL"]}
+                </span>
+              )}
+            </div>
           </div>
           <ul className="mt-3 space-y-1.5">
             {r.items.map((it) => (
@@ -298,8 +307,9 @@ function InfoRow({ label, value, multiline }: { label: string; value: string; mu
 type StepState = "done" | "rejected" | "current" | "waiting";
 
 function ApprovalTimeline({ r, theme, fmtTime }: { r: ReqDetail; theme: TypeTheme; fmtTime: (s: string) => string }) {
-  const snapshot = r.stepSnapshot as Array<{ stepOrder: number; name: string }> | null;
+  const snapshot = r.stepSnapshot;
   const byStep = new Map(r.approvals.map((a) => [a.step, a]));
+  const nameOf = (id: string) => r.approverNames?.[id] ?? "⚠ ผู้ใช้ไม่พร้อม";
   const allDone = r.status === "COMPLETED";
   const atWarehouse = r.status === "PENDING_WAREHOUSE";
   const isCancelled = r.status === "CANCELLED";
@@ -328,8 +338,14 @@ function ApprovalTimeline({ r, theme, fmtTime }: { r: ReqDetail; theme: TypeThem
   }
 
   const steps = [
-    ...snapshot.map((s) => ({ stepOrder: s.stepOrder, name: s.name, isWarehouse: false })),
-    { stepOrder: snapshot.length + 1, name: "คลังพาเลท", isWarehouse: true }
+    ...snapshot.map((s) => ({
+      stepOrder: s.stepOrder,
+      name: s.name,
+      approverIds: s.approverIds ?? [],
+      requesterPicks: s.requesterPicks ?? false,
+      isWarehouse: false
+    })),
+    { stepOrder: snapshot.length + 1, name: "คลังพาเลท", approverIds: [], requesterPicks: false, isWarehouse: true }
   ];
 
   return (
@@ -381,14 +397,29 @@ function ApprovalTimeline({ r, theme, fmtTime }: { r: ReqDetail; theme: TypeThem
                 {state === "current" && (
                   <span className={twMerge("rounded-full px-1.5 py-0.5 text-[10px] font-medium", theme.currentBadge)}>รออนุมัติ</span>
                 )}
+                {step.requesterPicks && !step.isWarehouse && (state === "current" || state === "waiting") && (
+                  <span className="rounded-full border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700">
+                    ผู้ขอเลือก
+                  </span>
+                )}
               </div>
-              {approval && (
+              {approval ? (
                 <div className="mt-0.5">
                   <p className="text-[11px] text-slate-500">
                     {approval.approver.fullName} · {fmtTime(approval.decidedAt)}
                   </p>
                   {approval.comment && <p className="mt-0.5 text-[11px] italic text-slate-400">&quote;{approval.comment}&quote;</p>}
                 </div>
+              ) : (
+                !step.isWarehouse && step.approverIds.length > 0 && (state === "current" || state === "waiting") && !isCancelled && (
+                  <p className="mt-0.5 text-[11px] text-slate-500">
+                    {step.approverIds.length > 1 ? "ผู้อนุมัติ: " : "ผู้อนุมัติ: "}
+                    {step.approverIds.map(nameOf).join(", ")}
+                  </p>
+                )
+              )}
+              {step.isWarehouse && !approval && (state === "current" || state === "waiting") && !isCancelled && (
+                <p className="mt-0.5 text-[11px] text-slate-500">ผู้อนุมัติ: ผู้อนุมัติพาเลท</p>
               )}
               {isCancelled && state === "waiting" && <p className="mt-0.5 text-[11px] text-slate-400">ยกเลิกแล้ว</p>}
             </div>

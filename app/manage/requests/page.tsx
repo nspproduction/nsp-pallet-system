@@ -111,7 +111,14 @@ export default async function Page({
                     {r.docNo}
                   </Link>
                 </td>
-                <td className="px-4 py-3 text-slate-700">{TYPE_LABEL[r.type] ?? r.type}</td>
+                <td className="px-4 py-3 text-slate-700">
+                  {TYPE_LABEL[r.type] ?? r.type}
+                  {r.type === "RETURN" && (
+                    <span className="ml-1.5 inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700">
+                      {(r.returnSource ?? "INTERNAL") === "CUSTOMER" ? "ลูกค้า" : "ใช้ภายใน"}
+                    </span>
+                  )}
+                </td>
                 <td className="px-4 py-3 text-slate-700">{r.requester.fullName}</td>
                 <td className="px-4 py-3 text-xs text-slate-500">
                   {r.fromDepartment?.name ?? "-"} → {r.toDepartment?.name ?? "-"}
